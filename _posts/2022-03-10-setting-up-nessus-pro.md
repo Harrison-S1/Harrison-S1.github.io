@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Setting up Nessus Pro"
+title: "Setting up Nessus Pro"
 date: 2022-03-10 09:00:00 -0500
 categories: [homelab, howto's, linux, security]
 tags: [homelab,linux,howto's,security]
