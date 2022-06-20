@@ -4,7 +4,6 @@ title: "Create a bind server with Ubuntu"
 date: 2022-06-19 09:00:00 -0500
 categories: [homelab, howto's, linux ]
 tags: [homelab,linux,howto's]
-By: "Sam"
 ---
 
 ### Install Bind
