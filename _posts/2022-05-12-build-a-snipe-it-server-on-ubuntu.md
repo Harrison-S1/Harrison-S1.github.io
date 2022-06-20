@@ -2,7 +2,7 @@
 layout: post
 title: "Build a snipe-it server on Ubuntu"
 date: 2022-05-12 09:00:00 -0500
-categories: [homelab, howto's, linux]
+categories: [homelab,howto's,linux]
 tags: [homelab,linux,howto's]
 ---
 

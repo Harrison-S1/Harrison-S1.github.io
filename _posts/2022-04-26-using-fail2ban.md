@@ -2,7 +2,7 @@
 layout: post
 title: "Using Fail2Ban"
 date: 2022-04-26 09:00:00 -0500
-categories: [homelab, howto's, linux, security]
+categories: [homelab,howto's,linux,security]
 tags: [homelab,linux,howto's,security]
 ---
 
