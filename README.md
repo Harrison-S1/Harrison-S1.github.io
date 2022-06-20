@@ -1,4 +1,3 @@
-
 # Hi, I'm Sam! 👋
 
 #### Sam's 2nd brain
