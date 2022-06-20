@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Create a bind server with Ubuntu"
-date: 2022-05-020 09:00:00 -0500
+date: 2022-05-02 09:00:00 -0500
 categories: [homelab, howto's, linux ]
 tags: [homelab,linux,howto's]
 ---
