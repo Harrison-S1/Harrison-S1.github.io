@@ -26,7 +26,7 @@ title: Sam's 2nd brain                          # the main title
 tagline: brain of brain   # it will display as the sub-title
 
 description: >-                        # used by seo meta and the atom feed
-  A second brain and how to's, mostly linux oriented
+  A second brain and how to's, mostly linux oriantated.
 
 # fill in the protocol & hostname for your site, e.g., 'https://username.github.io'
 url: ''
@@ -83,7 +83,7 @@ theme_mode: dark  # [light|dark]
 img_cdn:
 
 # the avatar on sidebar, support local or CORS resources
-avatar: 
+avatar:
 
 # boolean type, the global switch for ToC in posts.
 toc: true
@@ -160,7 +160,7 @@ defaults:
       layout: page
       permalink: /:title/
   - scope:
-      path: assets/img/favicons/
+      path: assets/img/favicons
     values:
       swcache: true
   - scope:
