@@ -2,7 +2,7 @@
 layout: post
 title: "RDP to Debian"
 date: 2022-03-15 09:00:00 -0500
-categories: [homelab, howto's, linux, security]
+categories: [homelab,howto's,linux,security]
 tags: [homelab,linux,howto's,security]
 ---
 
