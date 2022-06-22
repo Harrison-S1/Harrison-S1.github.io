@@ -4,6 +4,7 @@ title: "Ansible adding a new servers"
 date: 2021-06-01 09:00:00 -0500
 categories: [Ansible,howto's,linux]
 tags: [ansible,linux,howto's]
+![This is an image](https://myoctocat.com/assets/images/base-octocat.svg)
 ---
 
 #### Copying SSH-key
