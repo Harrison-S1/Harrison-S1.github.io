@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "Sping-up-Uptime-Kuma"
-date: 2022-06-23 09:00:00 -0500
+title: "Sping up Uptime Kuma"
+date: 2022-06-22 09:00:00 -0500
 categories: [docker,howto's,monitoring]
 tags: [monitoring,docker,howto's]
 ---
