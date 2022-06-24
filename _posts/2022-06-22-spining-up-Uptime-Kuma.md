@@ -18,7 +18,7 @@ touch docker-compose.yml
 vim docker-compose.yml
 ```
 
-```yaml;
+```yaml
 ---
 version: "3.1"
 
