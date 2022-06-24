@@ -1,12 +1,12 @@
 ---
 layout: post
-title: "Sping up Uptime Kuma"
+title: "Spining up Uptime Kuma"
 date: 2022-06-22 09:00:00 -0500
 categories: [docker,howto's,monitoring]
 tags: [monitoring,docker,howto's]
 ---
 
-For a person who comes from a world of Zabbix and Nagios, Uptime Kuma is wicked, a light weight monitoring tool that gets out of your way to do basics, ie HTTP(S), TCP Ports, DNS & SQL.  Lets spin it up:
+For a person who comes from a world of Zabbix and Nagios, Uptime Kuma is wicked, a light weight monitoring tool that gets out of your way to do basics, ie HTTP(S), TCP Ports, DNS & SQL. Lets spin it up:
 
 > You will need a Linux distro of choice and docker installed
 {: .prompt-tip }
