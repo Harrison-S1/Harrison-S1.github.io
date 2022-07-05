@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Vagrant and testing Ansible playbooks"
-date: 2022-07-05 09:00:00 -0500
+date: 2022-07-03 09:00:00 -0500
 categories: [Ansible,howto's,linux]
 tags: [ansible,linux,howto's,sysops]
 ---

@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Howto Enable Process Accounting in Ubuntu"
+title: "How to Enable Process Accounting in Ubuntu"
 date: 2022-02-09 09:00:00 -0500
 categories: [ubuntu,howto's,linux,security]
 tags: [security,ubuntu,howto's]
