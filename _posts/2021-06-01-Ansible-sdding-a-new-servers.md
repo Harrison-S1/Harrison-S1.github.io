@@ -3,7 +3,7 @@ layout: post
 title: "Ansible adding a new servers"
 date: 2021-06-01 09:00:00 -0500
 categories: [Ansible,howto's,linux]
-tags: [ansible,linux,howto's]
+tags: [ansible,linux,howto's,sysops]
 ---
 
 #### Copying SSH-key

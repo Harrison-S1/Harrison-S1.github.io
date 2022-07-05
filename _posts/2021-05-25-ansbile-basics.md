@@ -3,7 +3,7 @@ layout: post
 title: "Ansible basics"
 date: 2021-05-25 09:00:00 -0500
 categories: [Ansible,howto's,linux]
-tags: [ansible,linux,howto's]
+tags: [ansible,linux,howto's,sysops]
 ---
 
 #### Example CMD

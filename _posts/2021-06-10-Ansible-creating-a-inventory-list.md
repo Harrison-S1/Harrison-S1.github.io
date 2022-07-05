@@ -3,7 +3,7 @@ layout: post
 title: "Ansible creating a inventory list"
 date: 2021-06-10 09:00:00 -0500
 categories: [Ansible,howto's,linux]
-tags: [ansible,linux,howto's]
+tags: [ansible,linux,howto's,sysops]
 ---
 
 Create a inventory.yml file in your users ansible file
