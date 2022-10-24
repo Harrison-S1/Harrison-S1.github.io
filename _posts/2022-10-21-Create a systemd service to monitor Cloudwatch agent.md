@@ -1,9 +1,9 @@
 ---
 layout: post
 title: "Create a systemd service to monitor Cloudwatch agent"
-date: 2021-10-21 16:30:00 -0500
-categories: [aws,howto's,linux,cloudwatch]
-tags: [aws,linux,howto's,sysops,cloudwatch]
+date: 2022-10-21 16:30:00 -0500
+categories: [aws,howto's,linux,cloudwatch,cloud]
+tags: [aws,linux,howto's,sysops,cloudwatch,cloud]
 ---
 
 ### The problem to solve
