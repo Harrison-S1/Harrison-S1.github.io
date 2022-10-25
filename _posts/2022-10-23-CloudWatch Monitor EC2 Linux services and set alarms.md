@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "CloudWatch Monitor EC2 Linux services and set alarms."
+title: "CloudWatch Monitor EC2 Linux services and set alarms"
 date: 2022-10-23 09:00:00 -0500
 categories: [aws,howto's,linux,cloud,cloudwatch]
 tags: [aws,linux,howto's,sysops,cloud,cloudwatch]
