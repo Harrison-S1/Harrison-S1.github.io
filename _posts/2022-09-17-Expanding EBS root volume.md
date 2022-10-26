@@ -66,7 +66,7 @@ If the XFS tools are not already installed, you can install them as follows.
 ```bash
 sudo yum install xfsprogs
 ```
-<strong>ext4 file system</stong> To extend the file system on each volume, use the resize2fs command.
+<strong>ext4 file system</strong> To extend the file system on each volume, use the resize2fs command.
 ```bash
 sudo resize2fs /dev/nvme0n1p1
 ```
