@@ -9,7 +9,9 @@ tags: [aws,linux,howto's,sysops,cloud,terraform]
 # So what is a Storge Gateway? 
 A Storage Gateway it just a way to connect AWS storage in a traditional way e.g. NFS, SMB etc.
 
+
 ## Lets build one with Terraform
+
 > A fully working envriment with a Storage Gateway can be found [here](https://github.com/Harrison-S1/terraform/tree/master/aws_dev_env_sg)
 
 So a Storage Gateway is built up of the following 
@@ -81,7 +83,7 @@ resource "aws_storagegateway_cache" "dev-cache" {
 ```
 
 The varable for the instance ami will look like this:
-> The ami that is being used has been built by AWS
+> The ami that is being used has been built by AWS.
 
 ```terraform
 
@@ -110,7 +112,7 @@ resource "aws_security_group" "main_gateway_sg" {
   vpc_id      = aws_vpc.mainvpc.id
 
   // Activation
-  //////////////
+
   ingress {
     protocol    = "tcp"
     from_port   = 80
@@ -126,7 +128,7 @@ resource "aws_security_group" "main_gateway_sg" {
   }
 
   // NFS
-  ///////
+
   ingress {
     protocol    = "tcp"
     from_port   = 20048
@@ -169,8 +171,8 @@ resource "aws_security_group" "main_gateway_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  // DNS (?)
-  ///////////
+  // DNS
+
   ingress {
     protocol    = "tcp"
     from_port   = 53
@@ -186,7 +188,7 @@ resource "aws_security_group" "main_gateway_sg" {
   }
 
   // Allow all egress
-  ////////////////////
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -194,7 +196,6 @@ resource "aws_security_group" "main_gateway_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 ```
 
 ## Lets configure the gateway,NFS share & add the S3 policy. 
@@ -258,7 +259,6 @@ resource "aws_iam_policy" "policy" {
     ]
   })
 }
-
 ```
 
 ## Finally lets create our S3 butcket
@@ -281,11 +281,3 @@ And that's it, run your `terraform apply`. You should now have a storage gaetway
 No, I don't think it is for the following reasons:
 - This solution will be charging you for the instance, ebs volume, S3 bucket and the pulic IP etc.
 - There is a easier way to mount cloud storage on prem and within the cloud environment......[Rclone](https://rclone.org/) 
-
-
-
-
-
-
-
-
