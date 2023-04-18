@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Atlas project - part one"
+title: "Atlas Project - part one"
 date: 2023-04-17 09:00:00 -0500
 categories: [aws,howto's,linux,cloud,terraform,docker]
 tags: [aws,linux,howto's,sysops,cloud,terraform,docker]
@@ -21,7 +21,7 @@ I like to have control over the images, but you can either use mine or create yo
 
 This one is nice and straight forward:
 
-Clone the [rep](https://github.com/Harrison-S1/2048)o 
+Clone the [repo](https://github.com/Harrison-S1/2048)
 
 ```bash
 cd 2048
