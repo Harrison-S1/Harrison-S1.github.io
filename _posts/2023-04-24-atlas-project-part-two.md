@@ -291,10 +291,9 @@ Now on the next page you need to add the details from user, access key ID and Se
 ~/.aws/credentials
 ```
 
-> For example
+####  For example
 
 ```bash
-
 [terraformuser]
 # This key identifies your AWS account.
 aws_access_key_id = QKIAUDRQURVLS2JCIV4
@@ -302,7 +301,6 @@ aws_access_key_id = QKIAUDRQURVLS2JCIV4
 # control. If your secret key is ever disclosed, immediately use IAM to delete
 # the key pair and create a new one.
 aws_secret_access_key = nBhpjpTCyerter3sdf0l3QZ7zxV78ptCF
-
 ```
 
 ## Setting up your Terraform Cloud
