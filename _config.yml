@@ -171,6 +171,8 @@ defaults:
 
 sass:
   style: compressed
+  # Absolute installed gem paths must not enter published build bytes.
+  sourcemap: never
 
 compress_html:
   clippings: all

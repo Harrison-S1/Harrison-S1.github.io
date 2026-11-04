@@ -16,6 +16,75 @@ class FoundationTests(unittest.TestCase):
         self.assertIn('CHECKSUMS\n', (ROOT / 'Gemfile.lock').read_text())
 
 
+class ReproducibleBuildTests(unittest.TestCase):
+    def test_frozen_build_is_byte_reproducible(self):
+        import hashlib
+        import os
+        import subprocess
+        import tempfile
+        import time
+        # Retain evidence in the runner temp directory; never clean source fixtures.
+        target = Path(tempfile.mkdtemp(prefix='jekyll-reproducibility-'))
+        env = dict(os.environ, JEKYLL_ENV='production', SOURCE_DATE_EPOCH='1793790000')
+        manifests = []
+        for name in ('first', 'second'):
+            destination = target / name
+            result = subprocess.run(['bundle', 'exec', 'jekyll', 'build', '--trace',
+                                     '--destination', str(destination)], cwd=ROOT, env=env,
+                                    capture_output=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            manifests.append({str(p.relative_to(destination)): hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in destination.rglob('*') if p.is_file()})
+            time.sleep(1.1)
+        self.assertTrue(manifests[0])
+        self.assertEqual(manifests[0], manifests[1], str(target))
+        self.assertFalse(any(p.endswith('.css.map') for p in manifests[0]))
+
+    def test_invalid_reproducible_epoch_fails_closed(self):
+        import os
+        import subprocess
+        import tempfile
+        target = Path(tempfile.mkdtemp(prefix='jekyll-invalid-epoch-'))
+        for epoch in ('', 'not-a-timestamp', '0', '253402300800'):
+            with self.subTest(epoch=epoch):
+                result = subprocess.run(['bundle', 'exec', 'jekyll', 'build',
+                                         '--destination', str(target / ('case-' + epoch))],
+                                        cwd=ROOT, env=dict(os.environ, SOURCE_DATE_EPOCH=epoch),
+                                        capture_output=True, timeout=120)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Invalid SOURCE_DATE_EPOCH', result.stderr.decode())
+
+    def test_modern_theme_shell_assets_exist(self):
+        import os
+        import subprocess
+        import tempfile
+        from html.parser import HTMLParser
+        from urllib.parse import urlsplit
+        target = Path(tempfile.mkdtemp(prefix='jekyll-shell-assets-'))
+        result = subprocess.run(['bundle', 'exec', 'jekyll', 'build', '--destination', str(target)],
+                                cwd=ROOT, env=dict(os.environ, JEKYLL_ENV='production'),
+                                capture_output=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        class Assets(HTMLParser):
+            paths = set()
+            def handle_starttag(self, tag, attrs):
+                values = dict(attrs)
+                if tag == 'script':
+                    url = values.get('src', '')
+                elif tag == 'link' and values.get('rel') in (
+                        'icon', 'shortcut icon', 'apple-touch-icon', 'manifest', 'stylesheet'):
+                    url = values.get('href', '')
+                else:
+                    return
+                parsed = urlsplit(url)
+                if not parsed.netloc and parsed.path.startswith('/'):
+                    self.paths.add(parsed.path.lstrip('/'))
+        assets = Assets()
+        assets.feed((target / 'index.html').read_text())
+        self.assertTrue(assets.paths)
+        self.assertEqual([p for p in sorted(assets.paths) if not (target / p).is_file()], [])
+
+
 class TechnicalContentTests(unittest.TestCase):
     def test_renderer_transport_allows_unicode_and_escaping_within_body_limit(self):
         from validate_content import check_markdown

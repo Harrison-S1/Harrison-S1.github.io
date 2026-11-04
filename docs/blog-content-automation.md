@@ -22,6 +22,17 @@ result. If no eligible independent reviewer exists, stop for Sam's decision.
   Bundler **2.6.9**, Jekyll **4.4.1**, Chirpy **7.6.0**.
 - Exact Gemfile pins and regenerated `Gemfile.lock`, including gem checksums.
   CI/content/Pages use frozen installs with the same toolchain, no gem caches.
+- `_plugins/reproducible-build.rb` freezes Jekyll `site.time` to the source Git
+  HEAD committer timestamp, or explicit validated `SOURCE_DATE_EPOCH` for archives.
+  The content overlay supplies its exact validated head object's timestamp from
+  the trusted prepare manifest, not the older base timestamp. Future posts must
+  exist at that source revision's time; no wall-clock drift enables publication.
+  CSS source maps are disabled so absolute installation paths do not enter bytes.
+  Regression tests build twice and compare every generated file's SHA256, and
+  verify the modern theme's local shell CSS/JS/favicon/manifest assets exist.
+  This certifies repeat site-file bytes for identical source/history, toolchain
+  and environment, not hermetic package hosting or byte-identical artifact tar
+  metadata. Pages deliberately adds run-specific `build-info.json` afterwards.
 - SHA-pinned actions, Python3.12.12 and hash-locked binary Python parsers.
 - Existing content/URLs retained; canonical URL set and existing analytics ID
   migrated to Chirpy7 schema. `docs/` is not published. No dependency lock is a
@@ -44,9 +55,13 @@ Allow additions/modifications of at most20 regular non-executable `100644` blobs
 - `assets/img/posts/lowercase-folder/lowercase-file.{png,jpg,jpeg,webp}`:
   max2MB, decoded matching-format single-frame raster, max4096 per dimension and
   12million pixels. Aggregate changes max8MB. No SVG/HTML/script assets.
-- `examples/posts/<matching-post-slug>/<lowercase-file>.{py,json,txt,j2}`:
+- `examples/posts/<matching-post-slug>/<lowercase-file>.{py,json}`:
   max20,000 bytes; must accompany that post. No front matter, HTML or NUL.
-  JSON is parsed; txt/Jinja are **inert bytes**, never template-rendered.
+  JSON is limited to nested arrays of integer/boolean leaves: integer magnitude
+  <=1million, depth<=12 and nodes<=200. No strings, mappings, nulls, floats or
+  NaN. Arbitrary JSON manifests, `.txt` and `.j2` companions remain manual:
+  passive handling alone cannot establish that they are not infrastructure,
+  credentials or dependency configuration disguised as example files.
   Python companions support only bounded integer assignment/arithmetic/comparison
   and explicit true assertions: max200 AST nodes, depth12, magnitude1million.
   No eval/exec/compile, imports, calls, attributes, indexing, loops, powers,
@@ -102,7 +117,11 @@ for other head checks, then revalidates before AND after approval:
    and trusted orchestrator checkout. API errors/truncation/ambiguity fail closed.
 3. Every returned check/status successful. Reviews remain required (>=1), stale
    dismissal, CODEOWNER and last-push approval enabled; no force/deletion policy.
-   Required `Site / frozen build` is pinned to GitHub Actions App ID15368.
+   Both required checks `Site / frozen build` and
+   `Automation / offline adversarial tests` are strict and pinned to numeric
+   GitHub Actions App ID15368. A slug alone is not provenance. Named checks must
+   exist uniquely at the exact head and associate with their expected latest
+   workflow/run/suite/job/check-run URL; run and suite PR/base linkage is verified.
 4. Exact-head review is read back by ID/state/SHA/`github-actions[bot]` identity.
    A bot review is NOT assumed to satisfy eligibility. Only GitHub's normal
    `APPROVED`/`CLEAN` and mergeable/clean plus **strict up-to-date** required build
@@ -184,11 +203,21 @@ branch-protection object. If a prerequisite fails, automation remains off.
 ## Reproduce checks and collect live evidence
 
 ```sh
-bundle install                       # BUNDLE_FROZEN=true, pinned Ruby/Bundler
+export BUNDLE_FROZEN=true JEKYLL_ENV=production
+bundle install                       # pinned Ruby/Bundler, committed lockfile
 python -m pip install --require-hashes --only-binary=:all: -r .github/automation/requirements.txt
 python -m unittest discover -s .github/automation/tests -v
 bundle exec jekyll build --trace --destination <new-output-directory>
 ```
+
+An archive without Git metadata must set `SOURCE_DATE_EPOCH` to its validated
+exact source object's positive integer committer timestamp (maximum253402300799).
+Do not use the prior main timestamp for newly added posts. The content workflow
+reads `head_commit_timestamp` from the trusted manifest with `jq -er`; missing or
+malformed timestamps fail closed. Main and full-PR builds derive their checkout's
+Git timestamp directly. The reproducibility regression intentionally fixes this
+input across both builds. Archived overlays still lack historical lastmod Git
+metadata and are validation fixtures, not a claim of byte identity to main deploy.
 
 The suite's FakeAPI/canned transport successes are **offline fixtures**. Real
 local Git-object success, failed assertion, symlink rejection and corrected
