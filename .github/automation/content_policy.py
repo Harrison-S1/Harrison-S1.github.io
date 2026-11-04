@@ -13,7 +13,7 @@ REPO = 'Harrison-S1/Harrison-S1.github.io'
 AUTHOR = ('Harrison-S1', 54186142)
 POST = re.compile(r'_posts/(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*\.md\Z')
 IMAGE = re.compile(r'assets/img/posts/[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*\.(png|jpg|jpeg|webp)\Z')
-EXAMPLE = re.compile(r'examples/posts/([a-z0-9]+(?:-[a-z0-9]+)*)/[a-z0-9]+(?:-[a-z0-9]+)*\.(py|json|txt|j2)\Z')
+EXAMPLE = re.compile(r'examples/posts/([a-z0-9]+(?:-[a-z0-9]+)*)/[a-z0-9]+(?:-[a-z0-9]+)*\.(py|json)\Z')
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 MAX_FILES = 20
 MAX_POST = 100_000
@@ -28,6 +28,10 @@ def require(condition, reason):
 
 
 def metadata(pr):
+    # Existing editorial PR2 is explicitly outside automation authorization,
+    # including any later synchronize/rerun; changing this needs manual review.
+    require(type(pr['number']) is int and pr['number'] > 0, 'invalid PR number')
+    require(pr['number'] != 2, 'existing PR2 remains manual')
     require(pr['state'] == 'open' and pr['draft'] is False, 'closed/draft PR')
     require((pr['user']['login'], pr['user']['id']) == AUTHOR, 'untrusted author')
     require(pr['base']['ref'] == 'main', 'not main target')
@@ -173,10 +177,21 @@ def example(path, data):
     require(not text.startswith('---') and '<' not in text and '\x00' not in text,
             'example front matter/HTML/control character')
     if path.endswith('.json'):
-        json.loads(text)
+        # Data-only numeric arrays cannot hide manifests, credentials or policy.
+        # Arbitrary objects/strings/templates are manual, not "safe by suffix".
+        parsed_data = json.loads(text)
+        stack = [(parsed_data, 0)]
+        count = 0
+        while stack:
+            item, depth = stack.pop()
+            count += 1
+            require(depth <= 12 and count <= 200, 'JSON structure budget')
+            if isinstance(item, list):
+                stack.extend((child, depth + 1) for child in item)
+            else:
+                require(type(item) in (int, bool) and abs(item) <= 1_000_000,
+                        'only bounded integer/boolean JSON data; other examples need manual review')
         return {'assertions': 0}
-    if not path.endswith('.py'):
-        return {'assertions': 0}  # txt/j2 are inert bytes; never template-rendered.
     tree = ast.parse(text)
     nodes = list(ast.walk(tree))
     require(len(nodes) <= 200, 'example AST budget')

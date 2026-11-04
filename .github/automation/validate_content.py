@@ -116,6 +116,17 @@ def fetch_head(head):
     git('fetch', '--no-tags', '--depth=1000', 'https://github.com/' + policy.REPO + '.git', head)
 
 
+def commit_timestamp(head):
+    """Exact fetched head object supplies build epoch; never a PR field or shell."""
+    policy.require(policy.SHA.fullmatch(head), 'invalid timestamp head')
+    raw = git('show', '-s', '--format=%ct', head).decode('ascii').strip()
+    policy.require(raw.isascii() and raw.isdecimal() and 0 < int(raw) <= 253402300799,
+                   'invalid commit timestamp')
+    import time
+    policy.require(int(raw) <= int(time.time()), 'future-dated head commit')
+    return int(raw)
+
+
 def prepare(pr, base, output, manifest, fetcher=fetch_head):
     policy.metadata(pr)
     policy.require(policy.SHA.fullmatch(base) and base == pr['base']['sha'], 'base changed')
@@ -172,7 +183,8 @@ def prepare(pr, base, output, manifest, fetcher=fetch_head):
         policy.require(target.resolve().is_relative_to(output.resolve()), 'overlay escape')
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-    manifest.write_text(json.dumps({'base': base, 'head': head, 'files': files, 'posts': posts}, indent=2))
+    manifest.write_text(json.dumps({'base': base, 'head': head, 'head_commit_timestamp': commit_timestamp(head),
+                                    'files': files, 'posts': posts}, indent=2))
     print(json.dumps({'result': 'content-policy-passed', 'files': len(files), 'bytes': total,
                       'head': head, 'base': base}))
 

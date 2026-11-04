@@ -13,6 +13,9 @@ import content_policy as policy
 WORKFLOW = '.github/workflows/blog-content.yml'
 JOB = 'Blog content / validate'
 REQUIRED_JOB = 'Site / frozen build'
+REQUIRED_JOBS = (REQUIRED_JOB, 'Automation / offline adversarial tests')
+BUILD_WORKFLOW = '.github/workflows/blog-automation-tests.yml'
+ACTIONS_APP = 15368
 
 
 class GitHub:
@@ -71,6 +74,44 @@ class GitHub:
         return response['data']['repository']['pullRequest']
 
 
+def verify_run_checks(api, run, workflow_path, names, pr, checks):
+    """Bind each unique successful head check to a current workflow attempt/job.
+
+    A matching label or Actions slug alone is not a provenance assertion. No
+    check artifact/output or contributor-supplied URL is consumed or executed.
+    """
+    head, base = pr['head']['sha'], pr['base']['sha']
+    policy.require(run['path'] == workflow_path and run['event'] == 'pull_request' and
+                   run['head_sha'] == head and run['status'] == 'completed' and
+                   run['conclusion'] == 'success', 'required workflow unsuccessful/stale')
+    policy.require(run['repository']['full_name'] == policy.REPO and
+                   run['head_repository']['full_name'] == policy.REPO, 'foreign required workflow')
+    associations = run['pull_requests']
+    policy.require(len(associations) == 1 and associations[0]['number'] == pr['number'] and
+                   associations[0]['head']['sha'] == head and associations[0]['base']['sha'] == base,
+                   'required workflow PR/head/base association changed')
+    suite = api.get(f'/check-suites/{run["check_suite_id"]}')
+    policy.require(suite['id'] == run['check_suite_id'] and suite['head_sha'] == head and
+                   suite['app']['id'] == ACTIONS_APP and suite['app']['slug'] == 'github-actions',
+                   'numeric check suite provenance')
+    jobs = api.pages(f'/actions/runs/{run["id"]}/jobs', 'jobs')
+    policy.require(len(jobs) == len(names), 'unexpected required workflow jobs')
+    for name in names:
+        named = [c for c in checks if c['name'] == name]
+        matching_jobs = [j for j in jobs if j['name'] == name]
+        policy.require(len(named) == len(matching_jobs) == 1, 'missing/ambiguous required check/job: ' + name)
+        check, job = named[0], matching_jobs[0]
+        policy.require(check['head_sha'] == head and check['status'] == 'completed' and
+                       check['conclusion'] == 'success' and check['app']['id'] == ACTIONS_APP and
+                       check['app']['slug'] == 'github-actions' and
+                       check['check_suite']['id'] == run['check_suite_id'], 'required check provenance: ' + name)
+        expected_url = 'https://api.github.com/repos/' + policy.REPO + '/check-runs/' + str(check['id'])
+        policy.require(job['run_id'] == run['id'] and job['run_attempt'] == run['run_attempt'] and
+                       job['head_sha'] == head and
+                       job['status'] == 'completed' and job['conclusion'] == 'success' and
+                       job['check_run_url'] == expected_url, 'required job/check association: ' + name)
+
+
 def inspect(api, run_id, attempt, trusted_base):
     run = api.get(f'/actions/runs/{run_id}')
     workflow = api.get('/actions/workflows/blog-content.yml')
@@ -97,7 +138,8 @@ def inspect(api, run_id, attempt, trusted_base):
     policy.require(len(jobs) == 1 and jobs[0]['name'] == JOB and jobs[0]['status'] == 'completed' and
                    jobs[0]['conclusion'] == 'success', 'validation job missing/skipped/failed')
     suite = api.get(f'/check-suites/{run["check_suite_id"]}')
-    policy.require(suite['head_sha'] == head and suite['app']['slug'] == 'github-actions', 'check suite provenance')
+    policy.require(suite['head_sha'] == head and suite['app']['slug'] == 'github-actions' and
+                   suite['app']['id'] == ACTIONS_APP, 'check suite provenance')
     files = api.pages(f'/pulls/{number}/files')
     policy.file_policy(files)
     policy.require(len(files) == pr['changed_files'], 'API changed-file mismatch')
@@ -117,12 +159,25 @@ def inspect(api, run_id, attempt, trusted_base):
     checks = api.pages(f'/commits/{head}/check-runs', 'check_runs')
     policy.require(checks and all(c['status'] == 'completed' and c['conclusion'] == 'success' for c in checks),
                    'pending/failed/cancelled/skipped head check')
-    policy.require(any(c['name'] == JOB and c['check_suite']['id'] == run['check_suite_id'] and
-                       c['app']['slug'] == 'github-actions' for c in checks), 'validation check provenance')
+    verify_run_checks(api, run, WORKFLOW, (JOB,), pr, checks)
+    build_workflow = api.get('/actions/workflows/blog-automation-tests.yml')
+    policy.require(build_workflow['path'] == BUILD_WORKFLOW and build_workflow['state'] == 'active',
+                   'required build workflow changed/disabled')
+    builds = api.pages(f'/actions/workflows/{build_workflow["id"]}/runs?event=pull_request&head_sha={head}',
+                      'workflow_runs')
+    policy.require(builds, 'required workflow run missing')
+    latest_build_id = max(r['id'] for r in builds)
+    build = api.get(f'/actions/runs/{latest_build_id}')
+    policy.require(build['id'] == latest_build_id and build['workflow_id'] == build_workflow['id'],
+                   'required workflow identity')
+    verify_run_checks(api, build, BUILD_WORKFLOW, REQUIRED_JOBS, pr, checks)
     statuses = api.get(f'/commits/{head}/status')
     policy.require(len(statuses['statuses']) == statuses['total_count'] and
                    all(s['state'] == 'success' for s in statuses['statuses']), 'failed/pending/truncated status contexts')
-    verify_protection(api.review_state(number))
+    state = api.review_state(number)
+    verify_protection(state)
+    policy.require(state['headRefOid'] == head and state['baseRefOid'] == base, 'inspection policy SHA changed')
+    pr['_gate_protection'] = state['baseRef']['branchProtectionRule']
     return pr
 
 
@@ -135,8 +190,14 @@ def verify_protection(state):
                        ('dismissesStaleReviews', 'requiresCodeOwnerReviews', 'requireLastPushApproval')) and
                    protection.get('allowsForcePushes') is False and protection.get('allowsDeletions') is False,
                    'review/security protection changed; manual intervention required')
-    policy.require(any(c['context'] == REQUIRED_JOB and (c.get('app') or {}).get('databaseId') == 15368
-                       for c in protection.get('requiredStatusChecks', [])), 'required check source not GitHub Actions')
+    policy.require(protection.get('requiresStatusChecks') is True and
+                   protection.get('requiresStrictStatusChecks') is True and
+                   all(name in protection.get('requiredStatusCheckContexts', []) for name in REQUIRED_JOBS),
+                   'strict required checks missing; no automated approval')
+    for name in REQUIRED_JOBS:
+        matches = [c for c in protection.get('requiredStatusChecks', []) if c['context'] == name]
+        policy.require(len(matches) == 1 and (matches[0].get('app') or {}).get('databaseId') == ACTIONS_APP,
+                       'required check source not GitHub Actions: ' + name)
 
 
 def await_checks(api, head, sleep=None):
@@ -176,14 +237,17 @@ def orchestrate(api, run_id, attempt, trusted_base, sleep=None):
     # Re-read all metadata, paths, modes, checks, provenance and main AFTER approval.
     fresh = inspect(api, run_id, attempt, trusted_base)
     policy.require(fresh['head']['sha'] == head, 'head changed during approval')
+    policy.require(fresh['_gate_protection'] == pr['_gate_protection'], 'branch policy changed during approval')
     state = api.review_state(number)
     verify_protection(state)
+    policy.require(state['baseRef']['branchProtectionRule'] == pr['_gate_protection'],
+                   'branch policy changed before merge')
     policy.require(state['headRefOid'] == head and state['baseRefOid'] == trusted_base, 'policy SHA changed')
     # GitHub REST merge has an atomic head guard, but NO atomic expected-base guard.
     # Strict required checks close that race server-side. Missing protection => manual.
     rule = (state.get('baseRef') or {}).get('branchProtectionRule') or {}
     strict = (rule.get('requiresStatusChecks') is True and rule.get('requiresStrictStatusChecks') is True and
-              REQUIRED_JOB in rule.get('requiredStatusCheckContexts', []))
+              all(name in rule.get('requiredStatusCheckContexts', []) for name in REQUIRED_JOBS))
     if not (state['reviewDecision'] == 'APPROVED' and state['mergeStateStatus'] == 'CLEAN' and
             fresh.get('mergeable') is True and fresh.get('mergeable_state') == 'clean' and strict):
         return {'result': 'manual-policy-required', 'pr': number, 'head': head,

@@ -55,6 +55,28 @@ class FakeAPI:
         self.stale_after_review = False
         self.merge_result = {'merged': True, 'sha': 'c' * 40}
         self.protection = self.data['/branches/main/protection']
+        # Full current workflow/check provenance, not label-only local stubs.
+        import content_policy as policy
+        run = self.data['/actions/runs/7']
+        self.data['/check-suites/8'].update(id=8, app={'id': 15368, 'slug': 'github-actions'})
+        checks = self.data['/commits/' + HEAD + '/check-runs']
+        checks[0].update(id=81, head_sha=HEAD, app={'id': 15368, 'slug': 'github-actions'})
+        self.data['/actions/runs/7/jobs'][0].update(run_id=7, run_attempt=1, head_sha=HEAD,
+            check_run_url='https://api.github.com/repos/' + policy.REPO + '/check-runs/81')
+        build = copy.deepcopy(run)
+        build.update(id=9, workflow_id=13, path='.github/workflows/blog-automation-tests.yml', check_suite_id=10)
+        self.data['/actions/workflows/blog-automation-tests.yml'] = {'id': 13, 'path': build['path'], 'state': 'active'}
+        self.data['/actions/workflows/13/runs?event=pull_request&head_sha=' + HEAD] = [build]
+        self.data['/actions/runs/9'] = build
+        self.data['/check-suites/10'] = {'id': 10, 'head_sha': HEAD, 'app': {'id': 15368, 'slug': 'github-actions'}}
+        self.data['/actions/runs/9/jobs'] = []
+        for index, name in enumerate(('Site / frozen build', 'Automation / offline adversarial tests'), 82):
+            checks.append({'id': index, 'name': name, 'head_sha': HEAD, 'status': 'completed',
+                           'conclusion': 'success', 'app': {'id': 15368, 'slug': 'github-actions'},
+                           'check_suite': {'id': 10}})
+            self.data['/actions/runs/9/jobs'].append({'run_id': 9, 'run_attempt': 1, 'head_sha': HEAD, 'name': name,
+                'status': 'completed', 'conclusion': 'success',
+                'check_run_url': 'https://api.github.com/repos/' + policy.REPO + '/check-runs/' + str(index)})
 
     def get(self, path):
         if path == '/actions/workflows/pages-deploy.yml':
@@ -95,10 +117,11 @@ class FakeAPI:
                     'requiresCodeOwnerReviews': self.protection['required_pull_request_reviews']['require_code_owner_reviews'],
                     'requireLastPushApproval': self.protection['required_pull_request_reviews']['require_last_push_approval'],
                     'allowsForcePushes': False, 'allowsDeletions': False,
-                    'requiredStatusChecks': [{'context': 'Site / frozen build',
-                        'app': {'databaseId': self.protection['required_status_checks']['checks'][0]['app_id']}}],
+                    'requiredStatusChecks': [{'context': name,
+                        'app': {'databaseId': self.protection['required_status_checks']['checks'][0]['app_id']}}
+                        for name in ('Site / frozen build', 'Automation / offline adversarial tests')],
                     'requiresStrictStatusChecks': self.strict, 'requiresStatusChecks': self.strict,
-                    'requiredStatusCheckContexts': ['Site / frozen build']}}}
+                    'requiredStatusCheckContexts': ['Site / frozen build', 'Automation / offline adversarial tests']}}}
 
 
 class OrchestrationTests(unittest.TestCase):
@@ -166,8 +189,9 @@ class OrchestrationTests(unittest.TestCase):
     def test_missing_strict_required_checks_cannot_merge(self):
         api = FakeAPI()
         api.strict = False
-        self.assertEqual(self.call(api)['result'], 'manual-policy-required')
-        self.assertEqual(len(api.writes), 1)
+        with self.assertRaises(ValueError):
+            self.call(api)
+        self.assertEqual(api.writes, [])
 
     def test_unsafe_or_stale_results_never_approve(self):
         mutations = [
