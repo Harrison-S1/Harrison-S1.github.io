@@ -1,0 +1,18 @@
+---
+- name: Render a project-local Jinja template
+  hosts: local
+  gather_facts: false
+  vars:
+    demo_dir: "{{ playbook_dir }}/sandbox"
+    greeting: Hello from a template
+  tasks:
+    - name: Ensure the destination directory exists
+      ansible.builtin.file:
+        path: "{{ demo_dir }}"
+        state: directory
+        mode: '0755'
+    - name: Render the greeting
+      ansible.builtin.template:
+        src: greeting.txt.j2
+        dest: "{{ demo_dir }}/greeting.txt"
+        mode: '0644'

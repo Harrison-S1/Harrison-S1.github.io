@@ -1,0 +1,8 @@
+---
+- name: Read a few Linux facts
+  hosts: local
+  gather_facts: true
+  tasks:
+    - name: Show the distribution and Python version
+      ansible.builtin.debug:
+        msg: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}; Python {{ ansible_facts['python_version'] }}"
