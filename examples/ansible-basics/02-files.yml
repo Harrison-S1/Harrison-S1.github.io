@@ -1,0 +1,17 @@
+---
+- name: Manage a project-local directory and file
+  hosts: local
+  gather_facts: false
+  vars:
+    demo_dir: "{{ playbook_dir }}/sandbox"
+  tasks:
+    - name: Create the demo directory
+      ansible.builtin.file:
+        path: "{{ demo_dir }}"
+        state: directory
+        mode: '0755'
+    - name: Write a predictable message
+      ansible.builtin.copy:
+        dest: "{{ demo_dir }}/hello.txt"
+        content: "Hello from Ansible!\n"
+        mode: '0644'
