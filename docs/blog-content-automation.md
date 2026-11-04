@@ -92,6 +92,8 @@ Future-dated posts not yet rendered fail the published-page expectation instead
 of silently being represented as published. These checks do NOT assess factual
 accuracy, editorial quality, copyright, screenshots or real-world command safety.
 PR2's existing Ansible implementation remains manual and is not auto-published.
+Base-controlled metadata explicitly excludes PR number2 even after synchronize
+or rerun; removing that exclusion is a separately reviewed infrastructure change.
 
 ## Privileged boundary and normal policy
 
@@ -122,6 +124,9 @@ for other head checks, then revalidates before AND after approval:
    GitHub Actions App ID15368. A slug alone is not provenance. Named checks must
    exist uniquely at the exact head and associate with their expected latest
    workflow/run/suite/job/check-run URL; run and suite PR/base linkage is verified.
+   Missing strict status protection fails before approval, not only before merge.
+   The entire GraphQL branch-protection snapshot is compared after approval and
+   on the final policy read: even a review-count change from2 to1 fails closed.
 4. Exact-head review is read back by ID/state/SHA/`github-actions[bot]` identity.
    A bot review is NOT assumed to satisfy eligibility. Only GitHub's normal
    `APPROVED`/`CLEAN` and mergeable/clean plus **strict up-to-date** required build
@@ -212,6 +217,9 @@ bundle exec jekyll build --trace --destination <new-output-directory>
 
 An archive without Git metadata must set `SOURCE_DATE_EPOCH` to its validated
 exact source object's positive integer committer timestamp (maximum253402300799).
+Trusted prepare also rejects a contributor head timestamp later than its current
+clock, so a future commit timestamp cannot reveal posts that a current-time merge
+would subsequently omit.
 Do not use the prior main timestamp for newly added posts. The content workflow
 reads `head_commit_timestamp` from the trusted manifest with `jq -er`; missing or
 malformed timestamps fail closed. Main and full-PR builds derive their checkout's
