@@ -8,6 +8,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 class ValidationTests(unittest.TestCase):
+    def test_chirpy_seven_lazy_image(self):
+        from validate_content import rendered_article
+        self.assertIn('/image.png', rendered_article(
+            '<div class="content"><a href="/image.png" class="popup img-link shimmer">'
+            '<img src="/image.png" alt="Fixture" loading="lazy"></a></div>'))
+
     def test_actual_rendered_article_safety(self):
         from validate_content import rendered_article
         valid = '<div class="post-content"><h2 id="hi">Hi</h2><p><a href="/ok/">OK</a></p></div>'

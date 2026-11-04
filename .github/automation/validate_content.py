@@ -18,7 +18,8 @@ def git(*args):
 
 def check_entry(mode, typ, size, path):
     policy.require(mode == '100644' and typ == 'blob', 'symlink/executable/non-blob')
-    limit = policy.MAX_POST if policy.POST.fullmatch(path) else policy.MAX_IMAGE
+    limit = policy.MAX_POST if policy.POST.fullmatch(path) else (
+        policy.MAX_EXAMPLE if policy.EXAMPLE.fullmatch(path) else policy.MAX_IMAGE)
     policy.require(0 < size <= limit, 'blob size limit')
 
 
@@ -54,13 +55,14 @@ def check_links(root, page, links):
 class Article(HTMLParser):
     """Inspect actual Jekyll/Kramdown output, not just CommonMark's interpretation.
 
-    Trusted Chirpy layout has one post-content div. Source rejects all literal '<',
-    so contributor markup cannot close this wrapper to evade output inspection.
+    Chirpy7 has one exact content div; post-content remains the isolated fragment
+    test wrapper. Exact Kramdown AST checking rejects raw HTML BEFORE Jekyll, so
+    contributor markup cannot close the wrapper to evade output inspection.
     Theme upgrades that change this contract fail closed and need review.
     """
     TAGS = set('div span p a img h1 h2 h3 h4 h5 h6 ul ol li blockquote hr br pre code '
                'em strong del s table thead tbody tr td th i button'.split())
-    ATTRS = set('class id href src data-src alt title width height type role tabindex '
+    ATTRS = set('loading class id href src data-src alt title width height type role tabindex '
                 'aria-label aria-hidden data-title data-lang data-toggle data-placement '
                 'data-clipboard-text data-proofer-ignore data-label-text data-title-succeed'.split())
 
@@ -73,7 +75,7 @@ class Article(HTMLParser):
     def handle_starttag(self, tag, attrs):
         # Chirpy also uses post-content among multiple classes in its search UI.
         # The article wrapper's class value is exactly post-content.
-        if tag == 'div' and dict(attrs).get('class') == 'post-content':
+        if tag == 'div' and dict(attrs).get('class') in ('post-content', 'content'):
             policy.require(self.depth == 0, 'nested article wrapper')
             self.wrappers += 1
             self.depth = 1
@@ -154,6 +156,8 @@ def prepare(pr, base, output, manifest, fetcher=fetch_head):
             links = policy.post(path, data)
             slug = Path(path).stem[11:]
             posts.append({'path': path, 'page': '/posts/' + slug + '/', 'links': links})
+        elif policy.EXAMPLE.fullmatch(path):
+            policy.example(path, data)
         else:
             policy.image(path, data)
         validated.append((path, data))
@@ -173,6 +177,33 @@ def prepare(pr, base, output, manifest, fetcher=fetch_head):
                       'head': head, 'base': base}))
 
 
+def check_markdown(body):
+    """Exact production renderer plus bounded syntax-only fence checks, no eval."""
+    import ast
+    from markdown_it import MarkdownIt
+    import yaml
+    for token in MarkdownIt('commonmark').parse(body):
+        if token.type != 'fence':
+            continue
+        language = token.info.lower()
+        if language in ('python', 'py'):
+            ast.parse(token.content)
+        elif language in ('bash', 'sh'):
+            result = subprocess.run(['bash', '--noprofile', '--norc', '-n'],
+                                    input=token.content.encode(), capture_output=True, timeout=5,
+                                    env={'PATH': '/usr/bin:/bin'})
+            policy.require(result.returncode == 0, 'shell snippet syntax error')
+        elif language == 'json':
+            json.loads(token.content)
+        elif language in ('yaml', 'yml'):
+            yaml.safe_load(token.content)
+        # Other languages are passive display, not a claim of language validation.
+    result = subprocess.run(['bundle', 'exec', 'ruby', str(Path(__file__).with_name('render_check.rb'))],
+                            input=json.dumps({'body': body}).encode(), capture_output=True, timeout=30)
+    policy.require(result.returncode == 0, 'exact Kramdown safety check failed: ' + result.stderr.decode()[:500])
+    return rendered_article('<div class="post-content">' + result.stdout.decode() + '</div>')
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
@@ -184,11 +215,21 @@ def main():
     built = sub.add_parser('built')
     built.add_argument('--root', type=Path, required=True)
     built.add_argument('--manifest', type=Path, required=True)
+    render = sub.add_parser('render')
+    render.add_argument('--root', type=Path, required=True)
+    render.add_argument('--manifest', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'prepare':
         event = json.loads(args.event.read_text())
         policy.require(event['repository']['full_name'] == policy.REPO, 'wrong event repo')
         prepare(event['pull_request'], args.base, args.output, args.manifest)
+    elif args.command == 'render':
+        report = json.loads(args.manifest.read_text())
+        for item in report['posts']:
+            text = (args.root / item['path']).read_text(encoding='utf-8')
+            item['links'].extend(check_markdown(text[4:].split('\n---\n', 1)[1]))
+        args.manifest.write_text(json.dumps(report, indent=2))
+        print('Exact Kramdown AST/output and supported fence syntax checks passed.')
     else:
         report = json.loads(args.manifest.read_text())
         for post in report['posts']:

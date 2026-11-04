@@ -1,29 +1,91 @@
-name: 'Automatic build'
+name: Native Pages
+run-name: Publish ${{ inputs.expected_sha || github.sha }}
+
 on:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - .gitignore
-      - README.md
-      - LICENSE
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact verified merged main SHA (40 lowercase hex characters)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: native-pages-production
+  cancel-in-progress: false
+
+env:
+  EXPECTED_SHA: ${{ inputs.expected_sha || github.sha }}
 
 jobs:
-  continuous-delivery:
-
-    runs-on: ubuntu-latest
-
+  build:
+    if: >-
+      github.repository == 'Harrison-S1/Harrison-S1.github.io' &&
+      github.ref == 'refs/heads/main' &&
+      vars.BLOG_CONTENT_DEPLOYMENT_READY == 'acknowledged'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          fetch-depth: 0  # for posts's lastmod
-
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
         with:
-          ruby-version: 2.7
-          bundler-cache: true
-
-      - name: Deploy
-        run: bash tools/deploy.sh
+          python-version: '3.12.12'
+      - name: Verify exact main SHA before building
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/automation/pages_guard.py
+      - uses: ruby/setup-ruby@7b48e00e99515f8a6ecb53459862caa9fb0da7ad
+        with:
+          ruby-version: '3.4.12'
+          bundler: '2.6.9'
+          bundler-cache: false
+      - name: Build frozen production site and exact-SHA public marker
+        env:
+          BUNDLE_FROZEN: 'true'
+          BUNDLE_PATH: ${{ runner.temp }}/pages-gems
+          JEKYLL_ENV: production
+        run: |
+          bundle install --jobs 4 --retry 2
+          bundle exec jekyll build --trace --destination "$RUNNER_TEMP/pages-site"
+          printf '{"sha":"%s","run_id":"%s"}\n' "$EXPECTED_SHA" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/pages-site/build-info.json"
+      - name: Upload only this run's completed artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ${{ runner.temp }}/pages-site
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.12'
+      - name: Refuse stale queued artifact before deploying
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/automation/pages_guard.py
+      - name: Native atomic Pages deployment (failed builds never reach here)
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

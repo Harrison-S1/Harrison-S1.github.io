@@ -29,7 +29,7 @@ description: >-                        # used by seo meta and the atom feed
   A second brain and how to's, mostly linux oriantated.
 
 # fill in the protocol & hostname for your site, e.g., 'https://username.github.io'
-url: ''
+url: 'https://harrison-s1.github.io'
 
 github:
   username: Harrison-S1             # change to your github username
@@ -55,8 +55,9 @@ google_site_verification:               # fill in to your verification string
 # ↑ --------------------------
 # The end of `jekyll-seo-tag` settings
 
-google_analytics:
-  id: 'G-TSY28JSKB0'                 # fill in your Google Analytics ID
+analytics:
+  google:
+    id: 'G-TSY28JSKB0'              # Preserved ID; Chirpy7 schema.
   # Google Analytics pageviews report settings
   pv:
     proxy_endpoint:   # fill in the Google Analytics superProxy endpoint of Google App Engine
@@ -184,6 +185,7 @@ exclude:
   - '*.gem'
   - '*.gemspec'
   - tools
+  - docs
   - README.md
   - LICENSE
   - gulpfile.js

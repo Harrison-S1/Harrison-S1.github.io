@@ -13,10 +13,12 @@ REPO = 'Harrison-S1/Harrison-S1.github.io'
 AUTHOR = ('Harrison-S1', 54186142)
 POST = re.compile(r'_posts/(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*\.md\Z')
 IMAGE = re.compile(r'assets/img/posts/[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*\.(png|jpg|jpeg|webp)\Z')
+EXAMPLE = re.compile(r'examples/posts/([a-z0-9]+(?:-[a-z0-9]+)*)/[a-z0-9]+(?:-[a-z0-9]+)*\.(py|json|txt|j2)\Z')
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 MAX_FILES = 20
 MAX_POST = 100_000
 MAX_IMAGE = 2_000_000
+MAX_EXAMPLE = 20_000
 MAX_TOTAL = 8_000_000
 
 
@@ -43,7 +45,11 @@ def file_policy(files):
     for f in files:
         require(f['status'] in ('added', 'modified'), 'deletion/rename/type change')
         require(not f.get('previous_filename'), 'rename')
-        require(POST.fullmatch(f['filename']) or IMAGE.fullmatch(f['filename']), 'manual-review path')
+        example_match = EXAMPLE.fullmatch(f['filename'])
+        require(POST.fullmatch(f['filename']) or IMAGE.fullmatch(f['filename']) or example_match, 'manual-review path')
+        if example_match:
+            require(any(POST.fullmatch(p) and PurePosixPath(p).stem[11:] == example_match[1] for p in paths),
+                    'companion example must accompany its post')
 
 
 def link(value):
@@ -71,11 +77,9 @@ def post(path, data):
     require(0 < len(data) <= MAX_POST, 'post size limit')
     text = data.decode('utf-8', errors='strict')
     require(not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', text), 'control character')
-    # CommonMark and the locked Kramdown renderer disagree on some code boundaries.
-    # Never let a raw HTML opener hide in a CommonMark code token and escape in Jekyll.
-    require('<' not in text, 'raw angle opener anywhere requires manual review')
-    # No Liquid even in fenced examples: Jekyll processes Liquid before Markdown.
-    require(not any(s in text for s in ('{{', '{%', '{:', '<!--', '<?')), 'Liquid/HTML/extensions require manual review')
+    # CommonMark is only an early check. The exact locked Kramdown AST and
+    # actual theme output are separately inspected before this gate succeeds.
+    require('{:' not in text, 'Kramdown attribute extensions require manual review')
     require(text.startswith('---\n') and '\n---\n' in text[4:], 'missing front matter')
     front, body = text[4:].split('\n---\n', 1)
     require(len(front) <= 4096, 'front matter size')
@@ -88,7 +92,11 @@ def post(path, data):
     keys = [k.value for k, _ in node.value]
     require(len(keys) == len(set(keys)), 'duplicate front matter key')
     info = yaml.safe_load(front)
-    require(set(info) <= {'layout', 'title', 'date', 'categories', 'tags', 'description', 'toc'}, 'unsafe front matter key')
+    require(set(info) <= {'layout', 'title', 'date', 'categories', 'tags', 'description', 'toc', 'render_with_liquid'}, 'unsafe front matter key')
+    if 'render_with_liquid' in info:
+        require(info['render_with_liquid'] is False, 'Liquid opt-in forbidden')
+    if '{{' in text or '{%' in text:
+        require(info.get('render_with_liquid') is False, 'literal Liquid needs render_with_liquid: false')
     require({'layout', 'title', 'date', 'categories', 'tags'} <= set(info), 'required front matter')
     require(info['layout'] == 'post', 'layout must be post')
     for key in ('title', 'description'):
@@ -122,8 +130,7 @@ def post(path, data):
             require(closing.startswith(token.markup) and set(closing) <= set(token.markup), 'unclosed fence')
         if token.type == 'inline':
             for child in token.children or []:
-                require(child.type not in ('html_inline', 'code_inline'),
-                        'raw HTML/inline code requires manual review (renderer disagreement)')
+                require(child.type != 'html_inline', 'raw HTML requires manual review')
                 if child.type == 'text':
                     require('<' not in child.content and '>' not in child.content and
                             not re.search(r'!?\[[^\]]*\]\s*[\[(]', child.content),
@@ -149,3 +156,61 @@ def image(path, data):
         with Image.open(io.BytesIO(data)) as img:
             img.load()
     return True
+
+
+def example(path, data):
+    """Passive data or a deliberately tiny arithmetic test language, NOT Python exec.
+
+    No imports/calls/attributes/subscripts/loops/strings/powers. Bounded AST,
+    bounded integer arithmetic, and no filesystem/network/process access exist.
+    Real Python outside this subset stays manual, even if harmless-looking.
+    """
+    import ast
+    import json
+    import operator
+    require(EXAMPLE.fullmatch(path) and 0 < len(data) <= MAX_EXAMPLE, 'example path/size')
+    text = data.decode('utf-8', errors='strict')
+    require(not text.startswith('---') and '<' not in text and '\x00' not in text,
+            'example front matter/HTML/control character')
+    if path.endswith('.json'):
+        json.loads(text)
+        return {'assertions': 0}
+    if not path.endswith('.py'):
+        return {'assertions': 0}  # txt/j2 are inert bytes; never template-rendered.
+    tree = ast.parse(text)
+    nodes = list(ast.walk(tree))
+    require(len(nodes) <= 200, 'example AST budget')
+    env = {}
+    operations = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+                  ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+                  ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
+                  ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge}
+    def value(node, depth=0):
+        require(depth <= 12, 'expression depth budget')
+        if isinstance(node, ast.Constant):
+            result = node.value
+        elif isinstance(node, ast.Name):
+            require(node.id in env, 'unbound arithmetic name')
+            result = env[node.id]
+        elif isinstance(node, ast.BinOp):
+            require(type(node.op) in operations, 'unsupported arithmetic operator')
+            result = operations[type(node.op)](value(node.left, depth + 1), value(node.right, depth + 1))
+        elif isinstance(node, ast.Compare):
+            require(len(node.ops) == 1 and type(node.ops[0]) in operations, 'unsupported comparison')
+            result = operations[type(node.ops[0])](value(node.left, depth + 1), value(node.comparators[0], depth + 1))
+        else:
+            raise ValueError('manual-review Python construct')
+        require(type(result) in (int, bool) and abs(result) <= 1_000_000, 'bounded integers only')
+        return result
+    assertions = 0
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            require(len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name), 'simple assignment only')
+            env[statement.targets[0].id] = value(statement.value)
+        elif isinstance(statement, ast.Assert):
+            require(statement.msg is None and value(statement.test) is True, 'arithmetic example assertion failed')
+            assertions += 1
+        else:
+            raise ValueError('manual-review Python statement')
+    require(assertions > 0, 'Python example needs a bounded assertion')
+    return {'assertions': assertions}

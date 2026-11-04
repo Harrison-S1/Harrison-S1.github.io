@@ -83,9 +83,9 @@ class PolicyTests(unittest.TestCase):
                 p.file_policy([{'filename': PATH, 'status': status}])
 
     def test_unsafe_markdown_and_yaml_rejected(self):
-        attacks = [b'` <img src="x" onerror="alert(1)"> `',
-                   b'` [click](javascript:alert(1)) `', b'` [broken](/missing/) `',
-                   b'{{ site.data }}', b'{% include evil %}',
+        # Renderer-disagreement inline cases are now checked by exact Kramdown
+        # AST + rendered link tests in test_production, not blanket code bans.
+        attacks = [b'{{ site.data }}', b'{% include evil %}',
                    b'{% raw %}<script>alert(1)</script>{% endraw %}',
                    b'<img src=x onerror=alert(1)>', b'&lt;script&gt;',
                    b'[click](javascript:alert%281%29)', b'[click](data:text/html,evil)',

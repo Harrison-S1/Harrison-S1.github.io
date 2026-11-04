@@ -12,7 +12,7 @@ import content_policy as policy
 
 WORKFLOW = '.github/workflows/blog-content.yml'
 JOB = 'Blog content / validate'
-REQUIRED_JOB = 'Trusted base / Jekyll build'
+REQUIRED_JOB = 'Site / frozen build'
 
 
 class GitHub:
@@ -31,7 +31,7 @@ class GitHub:
         with urlopen(req, timeout=30) as response:
             raw = response.read(8_000_001)
             policy.require(len(raw) <= 8_000_000, 'API response limit')
-            return json.loads(raw)
+            return json.loads(raw) if raw else None
 
     def get(self, path):
         return self.request('GET', '/repos/' + policy.REPO + path)
@@ -59,6 +59,9 @@ class GitHub:
               reviewDecision mergeStateStatus headRefOid baseRefOid
               baseRef { branchProtectionRule {
                 requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts
+                requiresApprovingReviews requiredApprovingReviewCount dismissesStaleReviews
+                requiresCodeOwnerReviews requireLastPushApproval allowsForcePushes allowsDeletions
+                requiredStatusChecks { context app { databaseId } }
               } }
             }
           }
@@ -106,7 +109,8 @@ def inspect(api, run_id, attempt, trusted_base):
         entry = entries[item['filename']]
         policy.require(entry['mode'] == '100644' and entry['type'] == 'blob', 'unsafe head file mode')
         size = entry['size']
-        limit = policy.MAX_POST if policy.POST.fullmatch(item['filename']) else policy.MAX_IMAGE
+        limit = policy.MAX_POST if policy.POST.fullmatch(item['filename']) else (
+            policy.MAX_EXAMPLE if policy.EXAMPLE.fullmatch(item['filename']) else policy.MAX_IMAGE)
         policy.require(0 < size <= limit, 'blob limit')
         total += size
     policy.require(total <= policy.MAX_TOTAL, 'total byte limit')
@@ -118,11 +122,43 @@ def inspect(api, run_id, attempt, trusted_base):
     statuses = api.get(f'/commits/{head}/status')
     policy.require(len(statuses['statuses']) == statuses['total_count'] and
                    all(s['state'] == 'success' for s in statuses['statuses']), 'failed/pending/truncated status contexts')
+    verify_protection(api.review_state(number))
     return pr
 
 
-def orchestrate(api, run_id, attempt, trusted_base):
+def verify_protection(state):
+    """Run on every full inspection, including after approval; no admin REST scope."""
+    protection = (state.get('baseRef') or {}).get('branchProtectionRule') or {}
+    policy.require(protection.get('requiresApprovingReviews') is True and
+                   protection.get('requiredApprovingReviewCount', 0) >= 1 and
+                   all(protection.get(k) is True for k in
+                       ('dismissesStaleReviews', 'requiresCodeOwnerReviews', 'requireLastPushApproval')) and
+                   protection.get('allowsForcePushes') is False and protection.get('allowsDeletions') is False,
+                   'review/security protection changed; manual intervention required')
+    policy.require(any(c['context'] == REQUIRED_JOB and (c.get('app') or {}).get('databaseId') == 15368
+                       for c in protection.get('requiredStatusChecks', [])), 'required check source not GitHub Actions')
+
+
+def await_checks(api, head, sleep=None):
+    """Content validation may finish before CodeQL/build. Bounded wait, fail closed."""
+    import time
+    sleep = sleep or time.sleep
+    policy.require(policy.SHA.fullmatch(head), 'invalid check head')
+    for _ in range(48):
+        checks = api.pages(f'/commits/{head}/check-runs', 'check_runs')
+        statuses = api.get(f'/commits/{head}/status')
+        policy.require(checks and all(c['conclusion'] == 'success' for c in checks if c['status'] == 'completed'),
+                       'missing/failed completed check')
+        policy.require(all(s['state'] in ('success', 'pending') for s in statuses['statuses']), 'failed status context')
+        if all(c['status'] == 'completed' for c in checks) and all(s['state'] == 'success' for s in statuses['statuses']):
+            return
+        sleep(5)
+    raise ValueError('head checks did not complete within bounded wait')
+
+
+def orchestrate(api, run_id, attempt, trusted_base, sleep=None):
     policy.require(policy.SHA.fullmatch(trusted_base), 'invalid trusted checkout SHA')
+    await_checks(api, api.get(f'/actions/runs/{run_id}')['head_sha'], sleep=sleep)
     pr = inspect(api, run_id, attempt, trusted_base)
     number, head = pr['number'], pr['head']['sha']
     review = api.write('POST', f'/pulls/{number}/reviews', {
@@ -141,6 +177,7 @@ def orchestrate(api, run_id, attempt, trusted_base):
     fresh = inspect(api, run_id, attempt, trusted_base)
     policy.require(fresh['head']['sha'] == head, 'head changed during approval')
     state = api.review_state(number)
+    verify_protection(state)
     policy.require(state['headRefOid'] == head and state['baseRefOid'] == trusted_base, 'policy SHA changed')
     # GitHub REST merge has an atomic head guard, but NO atomic expected-base guard.
     # Strict required checks close that race server-side. Missing protection => manual.
@@ -161,8 +198,10 @@ def orchestrate(api, run_id, attempt, trusted_base):
     observed = api.get(f'/pulls/{number}')
     policy.require(observed.get('merged') is True and observed['merge_commit_sha'] == result['sha'],
                    'merge not verified by read-back')
+    from publication import dispatch
+    pages = dispatch(api, result['sha'])
     return {'result': 'merged', 'pr': number, 'head': head, 'merge_commit': result['sha'],
-            'publication': 'NOT verified; GITHUB_TOKEN push does not trigger existing deploy workflow.'}
+            'pages': pages, 'publication': 'Dispatch observed; deployment and public bytes must be verified separately.'}
 
 
 def main():

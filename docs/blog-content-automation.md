@@ -1,89 +1,234 @@
-# Checks-only blog content automation
+# Production blog automation: reviewed bootstrap and activation
 
-## Status and limits
+## Status: implementation staging, NOT production completion
 
-This implementation is **not AI review** and does not assess technical truth, command safety, factual accuracy, writing quality, copyright, screenshot provenance or editorial suitability. It never runs article snippets or Ansible examples. Passing checks is not a security audit or an editorial approval.
+This bootstrap builds on the off-by-default PR3 foundation. It needs a legitimate
+independent **infrastructure review** and normal-policy merge before activation.
+Do not merge PR3 unchanged as a substitute. No workflow approves its own changes.
+No administrator bypass, force push, branch deletion, broad PAT or invented
+review identity is supported. Sam approved implementation and controlled scoped
+repository operations; this document does not remove any review prerequisite.
 
-The privileged decision job is **off by default**, even after this PR is merged. No repository settings, branch protections, CODEOWNERS, secrets, existing deployment workflow or existing PRs are changed by this implementation. Do not enable it until the separate prerequisites below have been reviewed by Sam.
+The existing `gh` identity and infrastructure PR author are both `Harrison-S1`.
+GitHub rejected that OAuth identity's actual self-approval on PR3. This proves a
+bootstrap-review constraint, **not** that workflow `GITHUB_TOKEN` reviews cannot
+satisfy normal policy. Workflow-token eligibility remains an actual live test
+required AFTER bootstrap; do not claim a GitHub App is necessary without that
+result. If no eligible independent reviewer exists, stop for Sam's decision.
 
-### Narrow automatic-review policy
+## Foundation
 
-- Open, non-draft PR to `main`; same source and target repository `Harrison-S1/Harrison-S1.github.io`; author exactly `Harrison-S1` with GitHub numeric ID `54186142`. A matching display name is not enough. Forks and other authors require manual review.
-- 1–20 changed files, at least one post. Only additions/modifications of `_posts/YYYY-MM-DD-lowercase-hyphenated-slug.md` and `assets/img/posts/lowercase-hyphenated-folder/lowercase-hyphenated-file.{png,jpg,jpeg,webp}`.
-- Only regular nonexecutable Git blobs (`100644`). Deletions, renames (including delete+add), copies, symlinks, submodules and mode/type changes fail closed. Uppercase filenames and other image directories require manual review.
-- Each post at most 100,000 bytes; each image at most 2,000,000 bytes; aggregate at most 8,000,000 bytes. Raster images are decoded, extension/magic checked, single-frame only, at most 4096 in either dimension and 12 million pixels.
-- YAML front matter requires `layout: post`, title, timezone-aware date matching filename, nonempty lowercase categories and tags. Only optional `description` and boolean `toc` are accepted. Duplicate keys, aliases, anchors, tags, extra keys (including permalink, redirect, scripts and layout overrides), oversized front matter and control characters fail.
-- Markdown is parsed, requires a heading and explanatory text, and checks link/image destinations. Fences must close and have a plain language identifier. Raw HTML, HTML comments, PHP-like tags, indented code, **inline backtick code**, any literal `<` (even in a fence), Kramdown attribute extensions and **all Liquid**, including inside code fences, require manual review. No include/raw/relative_url exception is silently trusted: Liquid runs before Markdown. This conservative subset intentionally rejects harmless posts as well as attacks. An independent review reproduced a CommonMark/Kramdown disagreement where spaced inline code hid active HTML and JavaScript links; source restrictions and actual rendered-output inspection close that bypass.
-- Duplicate post slugs fail. The actual Jekyll/Kramdown-rendered article must have exactly one Chirpy `post-content` wrapper, only allowed passive elements/attributes, no active elements/event handlers/styles, and safe destinations. Links are checked from both parsed Markdown and actual rendered article output (including lazy-image data-src). Root-relative local links and fragments must resolve in the real Jekyll output, including changed post pages and assets. External links must be credential-free HTTPS with safe syntax. They are **not fetched**: availability and external fragments are unverified; arbitrary network link checking would create SSRF and nondeterminism. Relative `../` links, protocol-relative links, HTTP, data and javascript URLs are not accepted. Theme changes to this wrapper/attribute contract fail closed and require review.
-- Workflow, configuration, Gemfile/lockfile, plugin, theme, executable, script and companion-example changes are never eligible. **PR #2 (Ansible article) is ineligible**: it includes `examples/ansible-basics/**` code, inventory, templates and dependencies. Keep its manual review path. Do not split mixed changes merely to evade this review requirement.
+- Ubuntu24.04 runner; Ruby **3.4.12** (normally maintained3.4 branch),
+  Bundler **2.6.9**, Jekyll **4.4.1**, Chirpy **7.6.0**.
+- Exact Gemfile pins and regenerated `Gemfile.lock`, including gem checksums.
+  CI/content/Pages use frozen installs with the same toolchain, no gem caches.
+- SHA-pinned actions, Python3.12.12 and hash-locked binary Python parsers.
+- Existing content/URLs retained; canonical URL set and existing analytics ID
+  migrated to Chirpy7 schema. `docs/` is not published. No dependency lock is a
+  guarantee against every vulnerability; review future updates manually.
+- The inherited lastmod plugin cannot infer Git history from an archived content
+  overlay and emits Git warnings there. Real main checkout has history. Validation
+  does not certify historical lastmod timestamps.
 
-## Trust boundaries
+## Routine eligibility and meaningful validation
 
-`blog-content.yml` runs on read-only `pull_request`, with no secrets, no persistent checkout credentials and no shared cache. It checks out the exact **base SHA**, not the PR head. The trusted validator fetches the exact public head Git object (fixed repository URL), checks that current base is its ancestor, enumerates the complete Git diff and validates modes, byte sizes and content. It archives only the base tree, then overlays only approved post/image bytes. The PR Gemfile, plugins, scripts and config are never checked out or executed.
+Only open, non-draft, same-repository `main` PRs authored by numeric GitHub identity
+`Harrison-S1`/`54186142`. Both head and current base are bound to exact40-hex SHAs.
+Base must be an ancestor of head. Every changed file is checked; no partial diff.
 
-The full site then builds with unchanged trusted base Gemfile/lockfile, frozen deployment Bundler mode, Ruby 3.1.7, Bundler 2.3.16, Jekyll 4.2.2 and Chirpy 5.2.0. `--future` validates even future-dated posts; it does not promise publication before their date. The archived tree has no `.git`, so the existing last-modified plugin prints Git warnings and cannot prove Git-derived lastmod values. The build and rendered links still must succeed. Base code and dependencies are a trusted boundary, not made safe by accepting content only.
+Allow additions/modifications of at most20 regular non-executable `100644` blobs:
 
-`blog-automation-tests.yml` is a separate read-only PR workflow: it tests proposed implementation code without write credentials and also builds the **trusted base**. It runs for all main-target PRs, providing the always-present `Trusted base / Jekyll build` check suitable for strict up-to-date protection. For non-content changes this base build is only a baseline check, not validation of proposed code; human review and appropriate additional CI remain necessary.
+- `_posts/YYYY-MM-DD-lowercase-slug.md`: max100,000 bytes; at least one post;
+  safe restricted YAML, date/timezone matching filename, meaningful heading/prose,
+  no duplicate slug, overrides, YAML tags/aliases/anchors/duplicate keys.
+- `assets/img/posts/lowercase-folder/lowercase-file.{png,jpg,jpeg,webp}`:
+  max2MB, decoded matching-format single-frame raster, max4096 per dimension and
+  12million pixels. Aggregate changes max8MB. No SVG/HTML/script assets.
+- `examples/posts/<matching-post-slug>/<lowercase-file>.{py,json,txt,j2}`:
+  max20,000 bytes; must accompany that post. No front matter, HTML or NUL.
+  JSON is parsed; txt/Jinja are **inert bytes**, never template-rendered.
+  Python companions support only bounded integer assignment/arithmetic/comparison
+  and explicit true assertions: max200 AST nodes, depth12, magnitude1million.
+  No eval/exec/compile, imports, calls, attributes, indexing, loops, powers,
+  strings, network, filesystem or process operations exist in this interpreter.
+  This is a deliberately small test language, NOT arbitrary Python execution.
+  General Python, shell companions, Ansible, Terraform, workflows, inventory,
+  dependencies and infrastructure-changing examples stay manual.
 
-`blog-content-decision.yml` uses `workflow_run` from the default branch, checking out only the trusted default-branch event SHA. It installs no Python packages and downloads no PR artifacts/caches. Its write-capable job requires both explicit activation variables. Every action is pinned to a full commit SHA; runners are `ubuntu-24.04`, Python is 3.12.12, parsers are exact versions with wheel hashes. Hosted runner images and dependency package servers are not immutable hermetic environments; Ruby gems are version-locked by the existing lockfile but that old lockfile has no checksums.
+Inline/fenced code and Jinja examples are supported. Posts containing literal
+`{{`/`{%` MUST set `render_with_liquid: false`; opting into Liquid is forbidden.
+Jekyll honors that native field before Markdown, preserving examples literally.
+No include/raw/other active Liquid exception. Raw HTML, Kramdown source attribute
+extensions and indented code stay manual.
 
-Before approval, and again after approval, the orchestrator re-fetches:
+CommonMark is an early parser, NOT the security renderer. Before Jekyll the exact
+locked **Kramdown GFM AST** rejects raw HTML/comment/PI/raw nodes, closing the
+previous inline-code renderer disagreement. Its complete HTML fragment is also
+inspected. Python fences use AST syntax parsing; shell fences use `bash -n` with
+clean environment and timeout; JSON/YAML fences are parsed only. Other languages
+are displayed passively, not represented as syntax-validated or executed.
 
-1. Exact workflow ID/path, `pull_request` event, successful completed run/attempt, same repository, unique associated PR, matching current head and base SHAs, and no newer validation run.
-2. Successful expected job and GitHub Actions check-suite/check-run provenance, not an arbitrary success context or uploaded report.
-3. Current PR author/state/draft/base/repository, complete changed-file list, head-tree modes/sizes and count/truncation checks. Mixed code/content PRs fail even if someone spoofs a green check.
-4. Current `main` equal to the validated base and trusted orchestrator checkout. All returned current head check runs must be completed/successful; pending, skipped, neutral, cancelled, timed-out and failed checks reject. Legacy status contexts must all be successful and untruncated.
+Then a full real production Jekyll build runs against an archive of ONLY the
+trusted base infrastructure plus validated changed bytes. Actual Chirpy article
+HTML has one exact `content` wrapper, passive allowed elements/attributes and
+safe URLs. Actual rendered and parsed source links must resolve locally, including
+anchors/images/examples. External HTTPS is syntax-only, never fetched (SSRF).
+Future-dated posts not yet rendered fail the published-page expectation instead
+of silently being represented as published. These checks do NOT assess factual
+accuracy, editorial quality, copyright, screenshots or real-world command safety.
+PR2's existing Ansible implementation remains manual and is not auto-published.
 
-The approval specifies `commit_id` and is read back by review ID, state, bot identity and SHA. GitHub policy must then report `reviewDecision=APPROVED`, `mergeStateStatus=CLEAN`, REST mergeable/clean, and strict required status-check protection containing `Trusted base / Jekyll build`. A final head/base/main read precedes a normal REST squash merge with **atomic expected head SHA**. No admin flag, direct main push, protection bypass or automatic-merge setting is used. Successful merge responses are verified by reading the PR's merged state and merge commit.
+## Privileged boundary and normal policy
 
-REST merge has no expected-base parameter. Re-reading alone does **not** eliminate the final base-update race: strict required up-to-date checks are a mandatory server-side prerequisite. The content workflow separately proves the base is an ancestor of the head; if main advances, strict protection must block the merge until the branch is updated/revalidated. Missing protection leaves the PR open with `manual-policy-required`. The current repository has no required status checks, so it cannot automatically merge under this design as configured today.
+`blog-content.yml`: read-only PR job, exact base checkout, credentials not
+persisted, no secrets/caches/PR scripts. Bounded examples are interpreted as data
+in this read-only job, not run as contributor programs. The complete build must
+succeed before `Blog content / validate` succeeds.
 
-Job timeouts and PR-validation cancellation limit resource use. Privileged decisions are serialized and never cancel a mutation in flight. API failures, truncated lists, ambiguous associations, changed heads/bases and network uncertainty fail closed. Writes are never automatically retried. If checks are still pending, or GitHub policy/mergeability is still recalculating, rerun the successful content workflow after they settle. A failed or cancelled newer run must first be rerun successfully; do not reuse an earlier success.
+`blog-automation-tests.yml`: read-only proposed-code tests and **always-present**
+`Site / frozen build` on every main-target PR. Its proposed infrastructure is
+still subject to independent manual review. Unlike PR3, the proposed modern site
+is actually built, not just the old trusted base.
 
-## GITHUB_TOKEN, reviews and publication
+`blog-content-decision.yml`: serialized default-branch `workflow_run`, disabled
+unless BOTH activation variables match. No artifacts/caches or PR checkout;
+stdlib-only Python in the write-capable job. `actions: write` is required solely
+for the explicit Pages dispatch after verified merge. It waits at most4minutes
+for other head checks, then revalidates before AND after approval:
 
-Observed 2026-11-04: Actions may submit PR approvals; main requires one approving review, code-owner review for owned paths, last-push approval and stale-review dismissal. Admin enforcement is off, but this implementation never uses an administrator token. No CODEOWNERS exists at any of GitHub's three supported paths on current main; the codeowner setting does not itself assign an owner. The only listed human collaborator is the owner, Harrison-S1.
+1. Expected workflow ID/path, successful current run/attempt, PR association,
+   job/check suite from GitHub Actions, exact head/base and latest validation run.
+2. Current PR identity/state/files/modes/sizes; current main equals validated base
+   and trusted orchestrator checkout. API errors/truncation/ambiguity fail closed.
+3. Every returned check/status successful. Reviews remain required (>=1), stale
+   dismissal, CODEOWNER and last-push approval enabled; no force/deletion policy.
+   Required `Site / frozen build` is pinned to GitHub Actions App ID15368.
+4. Exact-head review is read back by ID/state/SHA/`github-actions[bot]` identity.
+   A bot review is NOT assumed to satisfy eligibility. Only GitHub's normal
+   `APPROVED`/`CLEAN` and mergeable/clean plus **strict up-to-date** required build
+   permit the exact-head-guarded squash merge. REST has no atomic expected-base
+   field; strict checks are the mandatory server-side base-race guard.
+5. Merge is read back. Explicitly dispatch native Pages on `main` with the exact
+   verified merge SHA and observe its new matching run. Writes are not retried.
+   Dispatch success is NOT deployment/publication proof. A gap after merge stops
+   with the old site intact; inspect the remote before explicit recovery.
 
-The approval setting authorizes the review API; it is **not a guarantee that a bot review satisfies protected-branch requirements**. A GITHUB_TOKEN review cannot stand in for a named human/team CODEOWNER. Last-push and ordinary approval eligibility remain GitHub's decision; the implementation does not assume an application approval counts as an eligible independent reviewer. No live bot approval/counting experiment was performed on PR #2 or this implementation PR. The safe supported behavior is: submit the checks result if enabled, then **stop unless GitHub reports all required reviews satisfied**. If it does not count the bot review, obtain an eligible independent human/CODEOWNER review. Do not weaken protections, add a PAT or grant a bypass to make it merge. If no eligible reviewer exists, automatic merge remains unavailable. A human approval can be followed by rerunning content checks; bot-triggered review events are not used as a recursion mechanism.
+Existing required reviews, CODEOWNERS, stale/last-push policies are never weakened.
+If the bot approval does not count, return `manual-policy-required`, keep the PR
+open and report the precise identity/reviewer prerequisite. Do not solve it with
+an administrator token or self-approving workflow changes. Mergeability may take
+GitHub time to recalculate: fail closed and rerun successful content checks after
+it settles; there is no claim of an infinitely retrying approval loop.
 
-GITHUB_TOKEN generally suppresses downstream workflow triggers for events it creates. Current exceptions include explicit workflow/repository dispatch and PR opened/synchronize/reopened events, which can create approval-required workflow runs; that newer PR exception does not make merge/push deployment recursive. A GITHUB_TOKEN merge **does not trigger the existing push/main `Automatic build` deployment**, and token-created commits also do not trigger a GitHub Pages build. Current Pages publishes the `gh-pages` branch (`build_type: legacy`). Existing `pages-deploy.yml` is unchanged. **Merged is not published.**
+## Native Pages handoff
 
-This PR intentionally does not silently add dispatch/deploy privileges or change production deployment. Before enabling, Sam must either approve and verify a separate least-privilege deployment handoff (for example, a carefully designed successful-decision/deployment workflow that builds the verified merged main SHA and publishes through the normal Pages policy), or explicitly accept a documented human publish procedure. Do not assume adding `workflow_run` to the old deployment is safe or sufficient. Its existing push-only design, mutable action tags, Ruby 2.7 and credential handling need a separate reviewed upgrade.
+`pages-deploy.yml` replaces the legacy gh-pages push script with native artifact
+publishing. Legacy branch/history is retained. Runs only on main push/explicit
+main dispatch and only after deployment acknowledgement. Both build and deploy
+check `expected_sha == github.sha == current main`, rejecting stale queued work.
+Build has contents-read only. Deploy depends on successful build and has only
+contents-read, pages-write and OIDC-write, with `github-pages` environment.
+Only this run's official uploaded artifact is used; no PR artifacts are trusted.
+An environment **main-only branch policy** is mandatory setup, not merely a
+workflow `if` (another branch could otherwise modify its own workflow).
+Failed builds never reach deployment and leave the last successful site serving.
+The generated public `/build-info.json` identifies exact SHA and Pages run ID.
 
-## Activation steps — separate explicit authorization required
+## Ordered activation runbook (approved scope, blocked on bootstrap review)
 
-1. Sam reviews and merges this **implementation PR himself**, using normal policy. This development task does not merge it. Default-branch `workflow_run` automation is not active while it exists only in a PR.
-2. Leave both activation variables absent. Run a disposable, explicitly authorized eligible content PR to observe read-only checks and successful frozen full build on the default-branch scripts. No live bot approval or merge is claimed by the implementation tests.
-3. Upgrade/test the legacy Ruby/Jekyll/theme/native-gem stack under a separate reviewed PR before production auto-merge: Ruby 3.1 is end-of-life, and the inherited 2022 dependency lock is not represented as vulnerability-free. The pinned legacy runtime demonstrates compatibility, not a current security support guarantee. Update pins/hashes deliberately and retest both workflows; never unfreeze dependencies to hide a failure.
-4. With separate settings authorization, configure main to require `Trusted base / Jekyll build` from GitHub Actions and **Require branches to be up to date before merging**. Keep existing approval/codeowner/last-push/stale-dismissal policies. This task makes no such settings changes. Do not require the path-filtered content job globally: that would block legitimate manual infrastructure PRs whose content workflow does not run.
-5. Establish eligible independent review if GitHub does not count the application review. If named CODEOWNERS are added in future, those owners must approve affected files. Confirm `reviewDecision=APPROVED` normally; no bypass and no new credentials.
-6. Resolve/test publication as above. Only after explicit Sam approval, set repository Actions variable `BLOG_CONTENT_DEPLOYMENT_READY=acknowledged`, documenting whether publication is automatic or human-operated. The variable is an acknowledgement, not a deploy test.
-7. Only then, with explicit Sam approval, set `BLOG_CONTENT_AUTOMERGE=enabled`. This authorizes future eligible PR approvals/normal-policy merge attempts. Automatic merge still refuses missing strict checks or unmet reviews. Repository `allow_auto_merge` can remain false: the implementation uses the normal merge endpoint, not GitHub's separately enabled auto-merge feature.
-8. Observe one separately authorized eligible PR end-to-end, verify exact run/head/base/review/merge and actual deployment. This implementation's offline tests deliberately do not exercise live mutations. To stop future decisions, remove/change `BLOG_CONTENT_AUTOMERGE`; cancel any queued decision and inspect a running mutation before assuming it stopped. No branch deletion or settings cleanup is automatic.
+1. Obtain eligible independent review of this **new modernized bootstrap PR**,
+   at its final head, with normal branch policy satisfied. Sam cannot approve
+   his own PR using another token for the same identity. Do NOT merge obsolete
+   PR3, use admin override, weaken reviews or create credentials. After review,
+   re-read reviews/checks/head/base and perform only normal-policy merge.
+2. Leave both variables absent. Save exact current protection/Pages/environment
+   JSON. Configure strict up-to-date required checks using the **status-check
+   subresource only**, preserving all existing contexts and review policy:
 
-## Verification and maintenance
+   `Site / frozen build` and `Automation / offline adversarial tests`, both
+   GitHub Actions App ID15368; strict=true. Read back exact protection and verify
+   review count/codeowner/last-push/stale fields unchanged. Do not require the
+   path-filtered content job globally, which would strand manual infra changes.
+3. Restrict existing `github-pages` environment to custom branch policy `main`
+   (type `branch`, not tag). Preserve current reviewers, wait timers and other
+   protection rules; if any introduces a human gate, report it rather than
+   removing it. Current observed environment has no rules, but re-read first.
+   Set Pages build type to `workflow`, preserving HTTPS/domain configuration.
+   Verify exact readbacks; never delete the gh-pages branch.
+4. Set `BLOG_CONTENT_DEPLOYMENT_READY=acknowledged` and verify. Explicitly
+   dispatch `pages-deploy.yml` with `ref=main`, `expected_sha=<current exact main>`.
+   Observe successful native deploy, public marker and representative old pages,
+   CSS/JS/images. No automerge yet; preserve existing site if build fails.
+5. Set `BLOG_CONTENT_AUTOMERGE=enabled` only after foundation is actually live.
+   Create a clearly labelled controlled routine technical test PR with native
+   Liquid opt-out, inline/fenced/Jinja code, passive PNG and bounded arithmetic
+   companion under its matching slug. No deletion. Record exact base/head.
+6. Observe real workflow GITHUB_TOKEN review and read GitHub's review decision.
+   If eligibility is unmet, stop with exact evidence; Sam must arrange legitimate
+   independent review or explicitly authorize/setup an independent scoped identity.
+   An App is conditional, not assumed necessary. No native profile changes.
+7. When normal policy permits, verify real merge, explicit dispatch/run/jobs,
+   exact merged SHA, successful native deploy and public marker/page/assets.
+   Use the read-only evidence collector below. A PR or green offline tests alone
+   does not satisfy production acceptance.
+8. Exercise a separate controlled negative (wrong bounded assertion or unsafe
+   content), prove failed check/no approval-merge/no new deployment and unchanged
+   published marker/assets. Correct that same PR without deletion; rerun and
+   verify recovery through review/merge/deploy/public bytes. Retain all evidence.
 
-Run from repository root with an isolated Python environment:
+No setting-write command here is an instruction to activate before review. When
+applying approved settings, use `gh api`, explicit typed JSON payloads and exact
+readbacks. Preserve existing required contexts; never PUT an incomplete replacement
+branch-protection object. If a prerequisite fails, automation remains off.
+
+## Reproduce checks and collect live evidence
 
 ```sh
+bundle install                       # BUNDLE_FROZEN=true, pinned Ruby/Bundler
 python -m pip install --require-hashes --only-binary=:all: -r .github/automation/requirements.txt
 python -m unittest discover -s .github/automation/tests -v
+bundle exec jekyll build --trace --destination <new-output-directory>
 ```
 
-Tests cover eligible content, untrusted authors/forks/drafts/targets, mixed paths, unsafe operations/modes/sizes, YAML and Liquid/HTML attacks, unsafe and unresolved links, raster decoding, duplicate slugs, rendered local links/fragments, stale runs/attempts/heads, failed/cancelled/skipped/pending checks, pagination/API errors, policy-blocked and rejected merges, and exact review/head payloads. API tests use a canned transport/FakeAPI; their positive merge is **not a real GitHub merge**. Workflow invariant tests assert full-SHA pins, read-only PR permissions, no direct shell-expression injection, nonpersistent credentials and disabled/default-branch-only privileged execution.
+The suite's FakeAPI/canned transport successes are **offline fixtures**. Real
+local Git-object success, failed assertion, symlink rejection and corrected
+recovery builds are also local fixtures, not remote review/deploy proof.
+Actionlint and zizmor check workflow schema/trust boundaries; suppressed findings
+remain disclosed. Hosted images/package servers are not hermetic trust boundaries.
 
-Local development also used actionlint 1.7.12 and zizmor 1.32.0 on the three new workflows. Zizmor's `workflow_run` dangerous-trigger finding is explicitly acknowledged with a localized suppression and the trust-boundary explanation; it is not proof that this trigger is inherently safe. No baseline findings in the unchanged deployment are silently fixed or represented as new-workflow findings. Real frozen base and trusted-base-plus-validated-fixture full Jekyll builds and local page/image/anchor checks were performed; fixture metadata was explicitly synthetic and never submitted to GitHub. Logs and exact remote CI status belong in the implementation handoff, not fabricated test output here.
+After an actual controlled success/recovery, collect read-only evidence:
 
-### Primary GitHub documentation consulted
+```sh
+python .github/automation/live_evidence.py --pr <actual-pr-number> \
+  --expected-sha <actual-merged-sha> --page /posts/<controlled-slug>/ \
+  --text '<unique-controlled-post-marker>' \
+  --asset /assets/img/posts/<controlled-slug>/check.png \
+  --asset /examples/posts/<controlled-slug>/check.py \
+  --output <new-evidence-json-path>
+```
 
-Retrieved during implementation on 2026-11-04 (documentation is current at retrieval):
+It uses the existing gh account for read-only APIs and fixed-site public HTTP,
+checking merge, exact-head bot approval, successful matching dispatched Pages run,
+public SHA marker, page text and exact asset SHA256 against merged Git blobs.
+Also retain protection/activation/environment readbacks and actual job URLs.
+No credentials are written into evidence. Never label these checks successful
+before executing them against real PR/deployment/public responses.
 
-- [GITHUB_TOKEN authentication and least privilege](https://docs.github.com/en/actions/reference/authentication-in-a-workflow)
-- [Events: pull_request, pull_request_target, workflow_run trust and default-branch behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
-- [Triggering workflows: GITHUB_TOKEN recursion restrictions](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow)
-- [GITHUB_TOKEN concepts and GitHub Pages restriction](https://docs.github.com/en/actions/concepts/security/github_token)
-- [Protected branches: eligible reviews, last push, strict checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
-- [CODEOWNERS locations, base-branch ownership and writer eligibility](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
-- [Merge endpoint, expected head SHA, conflict/policy responses](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)
+Emergency stop: set `BLOG_CONTENT_AUTOMERGE=disabled` (do not delete variables),
+read back, inspect any mutation already in flight. To stop publication, set
+`BLOG_CONTENT_DEPLOYMENT_READY=disabled`; it does not cancel an already running
+job. No automatic rollback/deletion of published content. For a post-merge
+handoff failure, first inspect current main and existing runs, then explicitly
+dispatch the fixed workflow for that same current main SHA; older SHAs are
+rejected. Reverting source requires a separately reviewed normal-policy PR.
 
-Some retrievals initially hit an extractor rate limit; primary article-body endpoints were used instead. Live repository REST/GraphQL reads established actual settings; they were not inferred from documentation examples.
+## Primary technical references
+
+- https://www.ruby-lang.org/en/downloads/branches/
+- https://jekyllrb.com/docs/liquid/options/
+- https://chirpy.cotes.page/posts/getting-started/
+- https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
+- https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow
+- https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+- https://docs.github.com/en/rest/branches/branch-protection
+- https://docs.github.com/en/rest/deployments/environments

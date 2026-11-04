@@ -23,11 +23,11 @@ jobs:
       vars.BLOG_CONTENT_DEPLOYMENT_READY == 'acknowledged' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
-      actions: read
+      actions: write
       checks: read
       statuses: read
     steps:

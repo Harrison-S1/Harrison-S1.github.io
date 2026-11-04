@@ -12,7 +12,7 @@ class WorkflowTests(unittest.TestCase):
         return yaml.load((ROOT / name).read_text(), Loader=yaml.BaseLoader)
 
     def test_pins_timeouts_permissions_and_no_injected_shell(self):
-        for file in ('blog-content.yml', 'blog-content-decision.yml', 'blog-automation-tests.yml'):
+        for file in ('blog-content.yml', 'blog-content-decision.yml', 'blog-automation-tests.yml', 'pages-deploy.yml'):
             workflow = self.load(file)
             self.assertIn('permissions', workflow)
             self.assertIn('concurrency', workflow)
@@ -23,7 +23,8 @@ class WorkflowTests(unittest.TestCase):
                     if 'uses' in step:
                         self.assertRegex(step['uses'], r'^[\w-]+/[\w-]+@[0-9a-f]{40}$')
                         self.assertNotIn('cache@', step['uses'])
-                        self.assertNotIn('artifact@', step['uses'])
+                        if file != 'pages-deploy.yml':
+                            self.assertNotIn('artifact@', step['uses'])
                     self.assertNotIn('${{', step.get('run', ''))
                     if step.get('uses', '').startswith('actions/checkout@'):
                         self.assertEqual(step['with']['persist-credentials'], 'false')
@@ -50,7 +51,28 @@ class WorkflowTests(unittest.TestCase):
         for step in job['steps']:
             self.assertNotIn('pip install', step.get('run', ''))
         self.assertEqual(job['permissions'], {'contents': 'write', 'pull-requests': 'write',
-                                            'actions': 'read', 'checks': 'read', 'statuses': 'read'})
+                                            'actions': 'write', 'checks': 'read', 'statuses': 'read'})
+
+    def test_modern_always_present_required_build_and_pages(self):
+        tests = self.load('blog-automation-tests.yml')
+        self.assertNotIn('paths', tests['on']['pull_request'])
+        self.assertTrue(any(j['name'] == 'Site / frozen build' for j in tests['jobs'].values()))
+        content = (ROOT / 'blog-content.yml').read_text()
+        self.assertIn('validate_content.py render', content)
+        self.assertIn('examples/posts/**', content)
+        for file in ('blog-content.yml', 'blog-automation-tests.yml', 'pages-deploy.yml'):
+            text = (ROOT / file).read_text()
+            self.assertIn("ruby-version: '3.4.12'", text)
+            self.assertIn("bundler: '2.6.9'", text)
+        pages = self.load('pages-deploy.yml')
+        self.assertIn('expected_sha', pages['on']['workflow_dispatch']['inputs'])
+        self.assertEqual(pages['permissions'], {})
+        self.assertEqual(pages['jobs']['build']['permissions'], {'contents': 'read'})
+        self.assertEqual(pages['jobs']['deploy']['needs'], 'build')
+        self.assertEqual(pages['jobs']['deploy']['permissions'],
+                         {'contents': 'read', 'pages': 'write', 'id-token': 'write'})
+        self.assertIn('pages_guard.py', str(pages['jobs']['build']['steps']))
+        self.assertIn('pages_guard.py', str(pages['jobs']['deploy']['steps']))
 
 
 if __name__ == '__main__':

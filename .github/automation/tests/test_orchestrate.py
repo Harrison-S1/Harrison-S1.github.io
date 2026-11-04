@@ -23,6 +23,11 @@ def fixture():
            'check_suite_id': 8}
     return {
         '/actions/runs/7': run,
+        '/branches/main/protection': {
+            'required_pull_request_reviews': {'required_approving_review_count': 1,
+                'dismiss_stale_reviews': True, 'require_code_owner_reviews': True, 'require_last_push_approval': True},
+            'required_status_checks': {'strict': True, 'checks': [{'context': 'Site / frozen build', 'app_id': 15368}]},
+            'allow_force_pushes': {'enabled': False}, 'allow_deletions': {'enabled': False}},
         '/actions/workflows/blog-content.yml': {'id': 12, 'path': run['path'], 'state': 'active'},
         '/actions/workflows/12/runs?event=pull_request&head_sha=' + HEAD: [run],
         '/actions/runs/7/jobs': [{'name': 'Blog content / validate', 'conclusion': 'success', 'status': 'completed'}],
@@ -49,8 +54,19 @@ class FakeAPI:
         self.strict = True
         self.stale_after_review = False
         self.merge_result = {'merged': True, 'sha': 'c' * 40}
+        self.protection = self.data['/branches/main/protection']
 
     def get(self, path):
+        if path == '/actions/workflows/pages-deploy.yml':
+            return {'id': 77, 'path': '.github/workflows/pages-deploy.yml', 'state': 'active'}
+        if path.startswith('/actions/workflows/77/runs'):
+            if not any(w[0].endswith('/dispatches') for w in self.writes):
+                return []
+            return [{'id': 100, 'workflow_id': 77, 'head_sha': 'c' * 40,
+                     'path': '.github/workflows/pages-deploy.yml', 'event': 'workflow_dispatch',
+                     'display_title': 'Publish ' + 'c' * 40, 'html_url': 'https://example.com/run/100'}]
+        if path == '/git/ref/heads/main' and any(w[0].endswith('/merge') for w in self.writes):
+            return {'object': {'sha': 'c' * 40}}
         if path == '/pulls/42' and any(w[0].endswith('/merge') for w in self.writes):
             obj = copy.deepcopy(self.data[path])
             obj.update(merged=True, merge_commit_sha='c' * 40)
@@ -73,20 +89,66 @@ class FakeAPI:
                 'mergeStateStatus': 'CLEAN' if self.approved else 'BLOCKED',
                 'headRefOid': HEAD, 'baseRefOid': BASE,
                 'baseRef': {'branchProtectionRule': {
+                    'requiresApprovingReviews': True,
+                    'requiredApprovingReviewCount': self.protection['required_pull_request_reviews']['required_approving_review_count'],
+                    'dismissesStaleReviews': self.protection['required_pull_request_reviews']['dismiss_stale_reviews'],
+                    'requiresCodeOwnerReviews': self.protection['required_pull_request_reviews']['require_code_owner_reviews'],
+                    'requireLastPushApproval': self.protection['required_pull_request_reviews']['require_last_push_approval'],
+                    'allowsForcePushes': False, 'allowsDeletions': False,
+                    'requiredStatusChecks': [{'context': 'Site / frozen build',
+                        'app': {'databaseId': self.protection['required_status_checks']['checks'][0]['app_id']}}],
                     'requiresStrictStatusChecks': self.strict, 'requiresStatusChecks': self.strict,
-                    'requiredStatusCheckContexts': ['Trusted base / Jekyll build']}}}
+                    'requiredStatusCheckContexts': ['Site / frozen build']}}}
 
 
 class OrchestrationTests(unittest.TestCase):
+    def test_wait_for_other_checks_before_decision(self):
+        from orchestrate import await_checks
+        class Pending(FakeAPI):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+            def pages(self, path, key=None):
+                if path.endswith('/check-runs'):
+                    self.calls += 1
+                    return [{'status': 'in_progress' if self.calls < 3 else 'completed', 'conclusion': 'success'}]
+                return super().pages(path, key)
+        api = Pending()
+        pauses = []
+        await_checks(api, HEAD, sleep=pauses.append)
+        self.assertEqual(api.calls, 3)
+        self.assertEqual(pauses, [5, 5])
+        self.assertEqual(api.writes, [])
+
+    def test_privilege_policy_changes_never_approve(self):
+        for key, value in [('dismiss_stale_reviews', False), ('require_code_owner_reviews', False),
+                           ('require_last_push_approval', False), ('required_approving_review_count', 0)]:
+            api = FakeAPI()
+            api.data['/branches/main/protection']['required_pull_request_reviews'][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.call(api)
+            self.assertEqual(api.writes, [])
+        api = FakeAPI()
+        api.data['/branches/main/protection']['required_status_checks']['checks'][0]['app_id'] = 1
+        with self.assertRaises(ValueError):
+            self.call(api)
+        self.assertEqual(api.writes, [])
+
     def call(self, api):
         from orchestrate import orchestrate
-        return orchestrate(api, 7, 1, BASE)
+        return orchestrate(api, 7, 1, BASE, sleep=lambda _: None)
 
     def test_positive_exact_sha_and_policy_merge(self):
         api = FakeAPI()
         self.assertEqual(self.call(api)['result'], 'merged')
         self.assertEqual(api.writes[0][1]['commit_id'], HEAD)
         self.assertEqual(api.writes[1][1], {'sha': HEAD, 'merge_method': 'squash'})
+
+    def test_verified_merge_dispatches_pinned_pages_handoff(self):
+        api = FakeAPI()
+        result = self.call(api)
+        self.assertEqual(result['pages']['run_id'], 100)
+        self.assertEqual(api.writes[2][1], {'ref': 'main', 'inputs': {'expected_sha': 'c' * 40}})
 
     def test_normal_policy_block_does_not_merge(self):
         api = FakeAPI()
