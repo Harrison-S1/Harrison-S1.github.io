@@ -1,0 +1,48 @@
+name: Blog content policy decision
+
+on:
+  # Reviewed trust boundary: default-branch SHA only, no PR code/artifacts/caches;
+  # independently verify run/jobs/checks/head/base and the complete changed tree.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Blog content checks]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: blog-content-policy-decision
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    # Deliberately OFF until Sam separately authorizes activation and prerequisites.
+    # Deployment resolution is a separate explicit acknowledgement, not a claim of publishing.
+    if: >-
+      github.repository == 'Harrison-S1/Harrison-S1.github.io' &&
+      vars.BLOG_CONTENT_AUTOMERGE == 'enabled' &&
+      vars.BLOG_CONTENT_DEPLOYMENT_READY == 'acknowledged' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+      statuses: read
+    steps:
+      - name: Checkout trusted default-branch event SHA only
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Set pinned Python (stdlib only; no dependency installation)
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Revalidate provenance, approve exact head, respect normal merge policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRUSTED_BASE: ${{ github.sha }}
+        run: python .github/automation/orchestrate.py
