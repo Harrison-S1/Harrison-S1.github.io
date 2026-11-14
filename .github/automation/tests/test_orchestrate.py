@@ -34,7 +34,7 @@ def fixture():
         '/check-suites/8': {'head_sha': HEAD, 'app': {'slug': 'github-actions'}},
         '/pulls/42': pull,
         '/pulls/42/reviews/99': {'id': 99, 'state': 'APPROVED', 'commit_id': HEAD,
-                                 'user': {'login': 'github-actions[bot]'}},
+                                 'user': {'id': 353438493, 'login': 'harrison-s1-blog-reviewer[bot]', 'type': 'Bot'}},
         '/pulls/42/files': [{'filename': PATH, 'status': 'added'}],
         '/git/trees/' + HEAD + '?recursive=1': {'truncated': False, 'tree': [
             {'path': PATH, 'mode': '100644', 'type': 'blob', 'size': 500}]},
@@ -103,7 +103,8 @@ class FakeAPI:
         if path.endswith('/reviews'):
             if self.stale_after_review:
                 self.data['/pulls/42']['head']['sha'] = 'd' * 40
-            return {'id': 99, 'state': 'APPROVED', 'commit_id': HEAD}
+            return {'id': 99, 'state': 'APPROVED', 'commit_id': HEAD,
+                    'user': {'id': 353438493, 'login': 'harrison-s1-blog-reviewer[bot]', 'type': 'Bot'}}
         return self.merge_result
 
     def review_state(self, number):
@@ -122,6 +123,26 @@ class FakeAPI:
                         for name in ('Site / frozen build', 'Automation / offline adversarial tests')],
                     'requiresStrictStatusChecks': self.strict, 'requiresStatusChecks': self.strict,
                     'requiredStatusCheckContexts': ['Site / frozen build', 'Automation / offline adversarial tests']}}}
+
+
+class ReviewFake:
+    """Separate review client; share receipt list solely for legacy ordering assertions."""
+    def __init__(self, api):
+        self.api = api
+
+    def get(self, path):
+        if path == '':
+            return {'id': 504555593, 'full_name': 'Harrison-S1/Harrison-S1.github.io',
+                    'owner': {'id': 54186142, 'login': 'Harrison-S1'}}
+        return self.api.get(path)
+
+    def request(self, method, path):
+        assert method == 'GET' and path == '/installation/repositories?per_page=100'
+        return {'total_count': 1, 'repositories': [self.get('')]}
+
+    def write(self, method, path, payload):
+        assert path == '/pulls/42/reviews'
+        return self.api.write(method, path, payload)
 
 
 class OrchestrationTests(unittest.TestCase):
@@ -159,7 +180,7 @@ class OrchestrationTests(unittest.TestCase):
 
     def call(self, api):
         from orchestrate import orchestrate
-        return orchestrate(api, 7, 1, BASE, sleep=lambda _: None)
+        return orchestrate(api, 7, 1, BASE, sleep=lambda _: None, review_api=ReviewFake(api))
 
     def test_positive_exact_sha_and_policy_merge(self):
         api = FakeAPI()

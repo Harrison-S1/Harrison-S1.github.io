@@ -10,8 +10,11 @@ class LiveEvidenceTests(unittest.TestCase):
         from live_evidence import verify_evidence
         sha, head = 'c' * 40, 'b' * 40
         evidence = {
-            'pr': {'merged': True, 'merge_commit_sha': sha, 'head': {'sha': head}},
-            'reviews': [{'state': 'APPROVED', 'commit_id': head, 'user': {'login': 'github-actions[bot]'}}],
+            'pr': {'merged': True, 'merge_commit_sha': sha, 'head': {'sha': head},
+                   'base': {'repo': {'id': 504555593, 'full_name': 'Harrison-S1/Harrison-S1.github.io',
+                                     'owner': {'id': 54186142, 'login': 'Harrison-S1'}}}},
+            'reviews': [{'id': 99, 'state': 'APPROVED', 'commit_id': head,
+                         'user': {'id': 353438493, 'login': 'harrison-s1-blog-reviewer[bot]', 'type': 'Bot'}}],
             'runs': [{'path': '.github/workflows/pages-deploy.yml', 'event': 'workflow_dispatch',
                       'head_sha': sha, 'conclusion': 'success', 'status': 'completed'}],
             'marker': {'sha': sha}, 'page_status': 200, 'page_text_found': True,

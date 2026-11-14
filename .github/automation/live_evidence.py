@@ -10,15 +10,22 @@ from pathlib import Path
 import subprocess
 from urllib.request import urlopen
 import content_policy as policy
+from review_identity import verify_review, verify_repository
 
 
 def verify_evidence(evidence, sha):
     policy.require(policy.SHA.fullmatch(sha), 'invalid expected SHA')
     pr = evidence['pr']
     policy.require(pr['merged'] is True and pr['merge_commit_sha'] == sha, 'exact merged SHA not verified')
-    policy.require(any(r['state'] == 'APPROVED' and r['commit_id'] == pr['head']['sha'] and
-                       r['user']['login'] == 'github-actions[bot]' for r in evidence['reviews']),
-                   'no exact-head workflow-bot approval observed')
+    verify_repository(pr['base']['repo'])
+    for review in evidence['reviews']:
+        try:
+            verify_review(review, pr['head']['sha'])
+        except ValueError:
+            continue
+        break
+    else:
+        raise ValueError('no exact-head numeric App-bot approval observed')
     policy.require(any(r['path'] == '.github/workflows/pages-deploy.yml' and
                        r['event'] == 'workflow_dispatch' and r['head_sha'] == sha and
                        r['status'] == 'completed' and r['conclusion'] == 'success' for r in evidence['runs']),

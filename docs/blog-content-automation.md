@@ -12,9 +12,40 @@ repository operations; this document does not remove any review prerequisite.
 The existing `gh` identity and infrastructure PR author are both `Harrison-S1`.
 GitHub rejected that OAuth identity's actual self-approval on PR3. This proves a
 bootstrap-review constraint, **not** that workflow `GITHUB_TOKEN` reviews cannot
-satisfy normal policy. Workflow-token eligibility remains an actual live test
-required AFTER bootstrap; do not claim a GitHub App is necessary without that
-result. If no eligible independent reviewer exists, stop for Sam's decision.
+satisfy normal policy. Workflow-token eligibility was not disproved. Sam has separately authorized a
+repository-scoped review App; this staging selects that single verified identity,
+not a permissive allowlist or an assertion that an App was technically necessary.
+App approval counting still requires an actual authorized live test. If no eligible
+independent reviewer exists, stop for Sam's decision.
+
+### Independent review identity (source-only staging, not activation)
+
+Verified setup contract: App `5645498` / `harrison-s1-blog-reviewer`, installation
+`179326232`, bot `353438493` / `harrison-s1-blog-reviewer[bot]` (type `Bot`), owner
+`54186142` / `Harrison-S1`, repository `504555593` /
+`Harrison-S1/Harrison-S1.github.io`. Exact App permissions are `pull_requests:write`
+and `metadata:read`; no contents/actions/admin/workflow privilege. The pinned mint
+action requests only these permissions for the named repository; its installation
+ID/slug outputs must match the fixed contract. The review client re-reads numeric
+repository/owner and singleton **token** scope before any review. That proves only
+the token scope, NOT the complete installation selection.
+
+Only the review step receives `GH_REVIEW_TOKEN`; `GH_TOKEN` remains normal
+`GITHUB_TOKEN` for inspection, normal-policy merge and Pages dispatch. Tokens must
+be nonempty and different; there is no fallback. Review transport rejects merge,
+deploy and foreign endpoints. POST and GET review receipts must match positive
+review ID, exact head, APPROVED state, numeric bot ID, login and Bot type. GitHub
+Actions check App ID `15368` remains unchanged: the review App does not issue CI.
+
+`BLOG_REVIEW_APP_PRIVATE_KEY` is a **name only**, not provisioned by this source
+patch. Never persist a token or put a key in source/artifacts/chat/shared storage.
+Before provisioning a verified replacement key for unattended production, retain
+the setup owner-confirmed installation-singleton gate and precisely authorized
+retirement of prior possibly readable key/copies; never revoke the working key
+first. Before any bootstrap review, require reviewed identity integration, fresh
+independent infrastructure audit and CI for the final changed head, complete
+setup and the single-review authorization. No workflow may approve infrastructure
+changes: the routine content allowlist and all normal review gates remain.
 
 ## Foundation
 
@@ -127,7 +158,8 @@ for other head checks, then revalidates before AND after approval:
    Missing strict status protection fails before approval, not only before merge.
    The entire GraphQL branch-protection snapshot is compared after approval and
    on the final policy read: even a review-count change from2 to1 fails closed.
-4. Exact-head review is read back by ID/state/SHA/`github-actions[bot]` identity.
+4. Exact-head independent App review is read back by ID/state/SHA and the
+   fixed numeric bot identity described above, not a login string alone.
    A bot review is NOT assumed to satisfy eligibility. Only GitHub's normal
    `APPROVED`/`CLEAN` and mergeable/clean plus **strict up-to-date** required build
    permit the exact-head-guarded squash merge. REST has no atomic expected-base
@@ -187,10 +219,10 @@ The generated public `/build-info.json` identifies exact SHA and Pages run ID.
    Create a clearly labelled controlled routine technical test PR with native
    Liquid opt-out, inline/fenced/Jinja code, passive PNG and bounded arithmetic
    companion under its matching slug. No deletion. Record exact base/head.
-6. Observe real workflow GITHUB_TOKEN review and read GitHub's review decision.
+6. Observe the authorized independent App's exact-head review and read GitHub's
+   review decision. An API success or numeric bot match is not proof it counts.
    If eligibility is unmet, stop with exact evidence; Sam must arrange legitimate
-   independent review or explicitly authorize/setup an independent scoped identity.
-   An App is conditional, not assumed necessary. No native profile changes.
+   independent review. No native profile changes or policy weakening.
 7. When normal policy permits, verify real merge, explicit dispatch/run/jobs,
    exact merged SHA, successful native deploy and public marker/page/assets.
    Use the read-only evidence collector below. A PR or green offline tests alone

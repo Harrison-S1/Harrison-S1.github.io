@@ -41,8 +41,24 @@ jobs:
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: '3.12.12'
+      # Provision the replaced/verified key only after owner installation-singleton
+      # confirmation, independent final-head infrastructure review and normal gates.
+      # This token has no contents/actions permissions; GITHUB_TOKEN merges/deploys.
+      - name: Mint repository-bounded independent review token
+        id: review-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: '5645498'
+          private-key: ${{ secrets.BLOG_REVIEW_APP_PRIVATE_KEY }}
+          owner: Harrison-S1
+          repositories: Harrison-S1.github.io
+          permission-pull-requests: write
+          permission-metadata: read
       - name: Revalidate provenance, approve exact head, respect normal merge policy
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REVIEW_TOKEN: ${{ steps.review-token.outputs.token }}
+          REVIEW_INSTALLATION_ID: ${{ steps.review-token.outputs.installation-id }}
+          REVIEW_APP_SLUG: ${{ steps.review-token.outputs.app-slug }}
           TRUSTED_BASE: ${{ github.sha }}
         run: python .github/automation/orchestrate.py

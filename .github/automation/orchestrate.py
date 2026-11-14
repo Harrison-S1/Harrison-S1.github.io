@@ -4,11 +4,13 @@ All network methods are injectable; tests never send review or merge requests.
 """
 import json
 import os
+import re
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import content_policy as policy
+from review_identity import APP_SLUG, INSTALLATION_ID, verify_review, verify_repository
 
 WORKFLOW = '.github/workflows/blog-content.yml'
 JOB = 'Blog content / validate'
@@ -72,6 +74,29 @@ class GitHub:
         response = self.request('POST', '/graphql', {'query': query, 'variables': {'number': number}})
         policy.require(not response.get('errors'), 'GraphQL policy query failed')
         return response['data']['repository']['pullRequest']
+
+
+class ReviewGitHub(GitHub):
+    """Review token cannot be routed to merge, deployment or arbitrary APIs."""
+    def request(self, method, url, data=None):
+        prefix = '/repos/' + policy.REPO
+        allowed = (method == 'GET' and url in (prefix, '/installation/repositories?per_page=100'))
+        allowed = allowed or (method == 'GET' and re.fullmatch(
+            re.escape(prefix) + r'/pulls/[1-9][0-9]*/reviews/[1-9][0-9]*', url))
+        allowed = allowed or (method == 'POST' and re.fullmatch(
+            re.escape(prefix) + r'/pulls/[1-9][0-9]*/reviews', url))
+        policy.require(allowed, 'review credential endpoint forbidden')
+        return super().request(method, url, data)
+
+
+def review_api_from_environment():
+    # Outputs of the SHA-pinned, fixed-App-ID mint action; never caller PR data.
+    token = os.environ.get('GH_REVIEW_TOKEN', '')
+    policy.require(token and token != os.environ.get('GH_TOKEN') and
+                   os.environ.get('REVIEW_INSTALLATION_ID') == str(INSTALLATION_ID) and
+                   os.environ.get('REVIEW_APP_SLUG') == APP_SLUG,
+                   'missing/separate review token or wrong App installation')
+    return ReviewGitHub(token)
 
 
 def verify_run_checks(api, run, workflow_path, names, pr, checks):
@@ -217,23 +242,27 @@ def await_checks(api, head, sleep=None):
     raise ValueError('head checks did not complete within bounded wait')
 
 
-def orchestrate(api, run_id, attempt, trusted_base, sleep=None):
+def orchestrate(api, run_id, attempt, trusted_base, sleep=None, review_api=None):
+    policy.require(review_api is not None and review_api is not api, "separate review API required")
+    verify_repository(review_api.get(""))
+    scope = review_api.request("GET", "/installation/repositories?per_page=100")
+    policy.require(scope.get("total_count") == 1 and len(scope.get("repositories", [])) == 1,
+                   "review token must be bounded to exactly one repository")
+    verify_repository(scope["repositories"][0])
     policy.require(policy.SHA.fullmatch(trusted_base), 'invalid trusted checkout SHA')
     await_checks(api, api.get(f'/actions/runs/{run_id}')['head_sha'], sleep=sleep)
     pr = inspect(api, run_id, attempt, trusted_base)
     number, head = pr['number'], pr['head']['sha']
-    review = api.write('POST', f'/pulls/{number}/reviews', {
+    review = review_api.write('POST', f'/pulls/{number}/reviews', {
         'commit_id': head, 'event': 'APPROVE',
         'body': 'Checks-only content gate passed for this exact head: content allowlist, metadata, '
                 'Markdown/raster/local links and frozen Jekyll build. Not AI review; technical correctness, '
                 'editorial quality and external link availability are NOT guaranteed. '
                 'This bot approval does not replace required human/CODEOWNER/last-push approval.'})
-    policy.require(review['state'] == 'APPROVED' and review['commit_id'] == head, 'approval not confirmed')
-    policy.require(type(review['id']) is int and review['id'] > 0, 'invalid review ID')
-    observed_review = api.get(f'/pulls/{number}/reviews/{review["id"]}')
-    policy.require(observed_review['id'] == review['id'] and observed_review['state'] == 'APPROVED' and
-                   observed_review['commit_id'] == head and
-                   observed_review['user']['login'] == 'github-actions[bot]', 'review read-back failed')
+    verify_review(review, head)
+    observed_review = review_api.get(f'/pulls/{number}/reviews/{review["id"]}')
+    verify_review(observed_review, head)
+    policy.require(observed_review['id'] == review['id'], 'review ID read-back failed')
     # Re-read all metadata, paths, modes, checks, provenance and main AFTER approval.
     fresh = inspect(api, run_id, attempt, trusted_base)
     policy.require(fresh['head']['sha'] == head, 'head changed during approval')
@@ -274,7 +303,8 @@ def main():
                    event['repository']['full_name'] == policy.REPO, 'unexpected event')
     run = event['workflow_run']
     api = GitHub(os.environ['GH_TOKEN'])
-    result = orchestrate(api, run['id'], run['run_attempt'], os.environ['TRUSTED_BASE'])
+    result = orchestrate(api, run['id'], run['run_attempt'], os.environ['TRUSTED_BASE'],
+                         review_api=review_api_from_environment())
     print(json.dumps(result, sort_keys=True))
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
         summary.write('Checks-only automation result:\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')

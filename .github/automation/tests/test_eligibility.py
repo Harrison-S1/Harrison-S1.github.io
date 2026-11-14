@@ -1,7 +1,7 @@
 """LOCAL FIXTURES ONLY: never approval/merge/deployment proof on GitHub."""
 import copy
 import unittest
-from test_orchestrate import FakeAPI, BASE, HEAD
+from test_orchestrate import FakeAPI, ReviewFake, BASE, HEAD
 from test_policy import PATH
 import content_policy as policy
 from orchestrate import inspect, orchestrate
@@ -51,14 +51,14 @@ class CompleteAPI(FakeAPI):
 class EligibilityTests(unittest.TestCase):
     def test_complete_verified_fixture_merges_with_atomic_head(self):
         api = CompleteAPI()
-        self.assertEqual(orchestrate(api, 7, 1, BASE)['result'], 'merged')
+        self.assertEqual(orchestrate(api, 7, 1, BASE, review_api=ReviewFake(api))['result'], 'merged')
         self.assertEqual(api.writes[1][1], {'sha': HEAD, 'merge_method': 'squash'})
 
     def test_missing_required_success_never_approves(self):
         api = CompleteAPI()
         api.data['/commits/' + HEAD + '/check-runs'].pop()
         with self.assertRaises(ValueError):
-            orchestrate(api, 7, 1, BASE)
+            orchestrate(api, 7, 1, BASE, review_api=ReviewFake(api))
         self.assertEqual(api.writes, [])
 
     def test_provenance_and_run_association(self):
@@ -74,7 +74,7 @@ class EligibilityTests(unittest.TestCase):
                 api = CompleteAPI()
                 api.data[path][key] = value
                 with self.assertRaises(ValueError):
-                    orchestrate(api, 7, 1, BASE)
+                    orchestrate(api, 7, 1, BASE, review_api=ReviewFake(api))
                 self.assertEqual(api.writes, [])
         for key, value in [('head_sha', 'd' * 40), ('app', {'id': 1, 'slug': 'github-actions'}),
                            ('id', 999), ('check_suite', {'id': 999})]:
@@ -123,7 +123,7 @@ class EligibilityTests(unittest.TestCase):
                     return super().get(path)
             api = Race()
             with self.subTest(attack=attack), self.assertRaises((ValueError, OSError)):
-                orchestrate(api, 7, 1, BASE)
+                orchestrate(api, 7, 1, BASE, review_api=ReviewFake(api))
             self.assertEqual(len(api.writes), 1)
 
     def test_review_count_reduction_is_policy_drift(self):
@@ -134,7 +134,7 @@ class EligibilityTests(unittest.TestCase):
                 return state
         api = Race()
         with self.assertRaises(ValueError):
-            orchestrate(api, 7, 1, BASE)
+            orchestrate(api, 7, 1, BASE, review_api=ReviewFake(api))
         self.assertEqual(len(api.writes), 1)
 
     def test_exact_head_timestamp_is_validated_and_read_as_data(self):
