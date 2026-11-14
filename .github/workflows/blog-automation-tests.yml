@@ -1,0 +1,70 @@
+name: Blog automation tests
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blog-automation-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Automation / offline adversarial tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout proposed implementation with no write credentials
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.12'
+      - uses: ruby/setup-ruby@7b48e00e99515f8a6ecb53459862caa9fb0da7ad
+        with:
+          ruby-version: '3.4.12'
+          bundler: '2.6.9'
+          bundler-cache: false
+      - name: Install frozen parsers and renderer
+        env:
+          BUNDLE_FROZEN: 'true'
+          BUNDLE_PATH: ${{ runner.temp }}/test-gems
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/automation/requirements.txt
+          bundle install --jobs 4 --retry 2
+      - name: Run offline adversarial and real renderer tests
+        env:
+          BUNDLE_FROZEN: 'true'
+          BUNDLE_PATH: ${{ runner.temp }}/test-gems
+        run: python -m unittest discover -s .github/automation/tests -v
+  frozen-build:
+    # Always present on EVERY PR; strict up-to-date required Actions check.
+    # Proposed infrastructure is read-only here and needs independent review.
+    name: Site / frozen build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - uses: ruby/setup-ruby@7b48e00e99515f8a6ecb53459862caa9fb0da7ad
+        with:
+          ruby-version: '3.4.12'
+          bundler: '2.6.9'
+          bundler-cache: false
+      - name: Real full frozen production build
+        env:
+          BUNDLE_FROZEN: 'true'
+          BUNDLE_PATH: ${{ runner.temp }}/site-gems
+          JEKYLL_ENV: production
+        run: |
+          bundle install --jobs 4 --retry 2
+          bundle exec jekyll build --trace --destination "$RUNNER_TEMP/site-built"
