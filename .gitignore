@@ -7,6 +7,11 @@
 !.husky
 !.commitlintrc.json
 !.versionrc.json
+!.ruby-version
+
+# Local Python test bytecode is never source or a Pages asset.
+__pycache__/
+*.pyc
 
 # bundler cache
 _site
