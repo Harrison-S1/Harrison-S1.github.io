@@ -1,0 +1,38 @@
+---
+# Only run against a disposable Debian/Ubuntu VM, never the control host.
+- name: Install nginx and manage its default page
+  hosts: web
+  become: true
+  gather_facts: true
+  vars:
+    page_title: My Ansible lab
+  pre_tasks:
+    - name: Require Debian or Ubuntu
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+        fail_msg: This example is only intended for Debian or Ubuntu.
+  tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        auto_install_module_deps: false
+    - name: Render the default web page
+      ansible.builtin.template:
+        src: index.html.j2
+        dest: /var/www/html/index.html
+        mode: '0644'
+      notify: Reload nginx
+    - name: Ensure nginx is running and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
