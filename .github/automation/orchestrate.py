@@ -72,7 +72,28 @@ class GitHub:
           }
         }'''
         response = self.request('POST', '/graphql', {'query': query, 'variables': {'number': number}})
-        policy.require(not response.get('errors'), 'GraphQL policy query failed')
+        if response.get('errors'):
+            # Never emit messages, extensions, data, headers or credentials. Only
+            # fixed schema names and fixed error classes may cross into logs.
+            fields = set(re.findall(r'[A-Za-z][A-Za-z0-9]*', query))
+            classes = {'FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND', 'RATE_LIMITED',
+                       'INTERNAL', 'UNPROCESSABLE'}
+            errors = response['errors']
+            safe = []
+            if isinstance(errors, list):
+                for error in errors[:8]:
+                    error = error if isinstance(error, dict) else {}
+                    kind = error.get('type')
+                    path = error.get('path')
+                    safe.append({
+                        'type': kind if isinstance(kind, str) and kind in classes else 'OTHER',
+                        'path': [part if isinstance(part, str) and part in fields else '?'
+                                 for part in path[:8]] if isinstance(path, list) else [],
+                    })
+            raise ValueError('GraphQL policy query failed: ' + json.dumps({
+                'error_count': len(errors) if isinstance(errors, list) else 'invalid',
+                'errors': safe,
+            }, sort_keys=True))
         return response['data']['repository']['pullRequest']
 
 

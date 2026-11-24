@@ -1,0 +1,66 @@
+# PROPOSAL ONLY. Separate infrastructure review and exact Sam approval required.
+# One manual query; no App secret/mint/review/merge/deploy or PR checkout.
+name: Bounded policy visibility diagnosis
+on:
+  workflow_dispatch:
+permissions: {}
+# Serialize diagnostics; this is NOT a lifetime one-dispatch authorization.
+concurrency:
+  group: blog-policy-diagnose-singleton
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    name: Fixed PR8 native-token policy diagnosis
+    if: github.repository == 'Harrison-S1/Harrison-S1.github.io' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    # Match failed decide job for credential-equivalent visibility, NOT new grants.
+    # The only executable API seam below permits the fixed GraphQL query.
+    permissions:
+      contents: write # Preserve failed decide job contents scope for token equivalence, not query necessity.
+      pull-requests: write # Preserve failed decide job pull-requests scope for token equivalence, not query necessity.
+      actions: write # Preserve failed decide job actions scope for token equivalence, not query necessity.
+      checks: read # Preserve failed decide job checks scope for token equivalence, not query necessity.
+      statuses: read # Preserve failed decide job statuses scope for token equivalence, not query necessity.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.12.12'
+      - name: Fixed PR8 policy query only
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import sys
+          sys.path.insert(0, '.github/automation')
+          from orchestrate import GitHub
+          class QueryOnly(GitHub):
+              # One attempt per instance, consumed before validation/transport.
+              # Cross-run authorization remains an exclusive operator receipt.
+              _used = False
+
+              def request(self, method, url, data=None):
+                  if self._used:
+                      raise ValueError('diagnostic endpoint forbidden')
+                  self._used = True
+                  if (method != 'POST' or url != '/graphql' or
+                      type(data) is not dict or set(data) != {'query', 'variables'} or
+                      type(data['variables']) is not dict or
+                      set(data['variables']) != {'number'} or
+                      type(data['variables']['number']) is not int or
+                      data['variables']['number'] != 8 or
+                      type(data['query']) is not str or
+                      hashlib.sha256(data['query'].encode()).hexdigest() !=
+                      '4da9f22566df0fbf60c7ee17a4840631a74da2f7763dbd2e094248f4fbd0786c'):
+                      raise ValueError('diagnostic endpoint forbidden')
+                  return super().request(method, url, data)
+          QueryOnly(os.environ['GH_TOKEN']).review_state(8)
+          print('Fixed PR8 policy query succeeded; no approval or publication attempted.')
+          PY
